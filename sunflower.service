@@ -1,0 +1,19 @@
+[Unit]
+Description=Sunflower Telegram Bot
+After=network.target
+
+[Service]
+# Change 'youruser' to your actual VPS linux username (e.g., ubuntu, root)
+User=youruser
+# Update this path to where you cloned the repository on the VPS
+WorkingDirectory=/opt/sunflower-v1.0.0
+
+# Point to the python executable in your virtual environment
+ExecStart=/opt/sunflower-v1.0.0/venv/bin/python -m sunflower.main
+
+# Automatically restart the bot if it crashes or the server reboots
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

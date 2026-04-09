@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  sunflower-bot:
+    build: .
+    container_name: sunflower_bot
+    restart: unless-stopped
+    # It reads your OpenRouter and Telegram keys straight from the .env file
+    env_file:
+      - .env
+    # We map config.json so the model selection state persists even if the container restarts
+    volumes:
+      - ./config.json:/app/config.json
