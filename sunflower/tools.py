@@ -51,11 +51,22 @@ class PluginManager:
                     print(f"Failed to load plugin {filename}: {e}")
 
     @classmethod
-    def get_all_schemas(cls) -> list:
-        return [plugin.get_tool_schema() for plugin in cls._plugins.values() if plugin.get_tool_schema()]
+    async def get_all_schemas(cls) -> list:
+        schemas = [plugin.get_tool_schema() for plugin in cls._plugins.values() if plugin.get_tool_schema()]
+        try:
+            from sunflower.mcp_manager import McpManager
+            mcp_schemas = await McpManager.get_all_tools()
+            schemas.extend(mcp_schemas)
+        except Exception as e:
+            print(f"[PluginManager] Error fetching MCP tools: {e}")
+        return schemas
         
     @classmethod
     async def execute_tool(cls, name: str, kwargs: dict) -> str:
+        if name.startswith("mcp__"):
+            from sunflower.mcp_manager import McpManager
+            return await McpManager.execute_tool(name, kwargs)
+
         if name in cls._plugins:
             try:
                 return await cls._plugins[name].execute(**kwargs)

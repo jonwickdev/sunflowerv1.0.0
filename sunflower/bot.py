@@ -9,6 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 from sunflower.config import Config
 from sunflower.llm import LLMClient
 from sunflower.tools import PluginManager
+from sunflower.mcp_manager import McpManager
 
 # States for Model Selection
 class ModelStates(StatesGroup):
@@ -43,6 +44,8 @@ class SunflowerBot:
         self.dp.message(Command("think"))(self.cmd_think)
         self.dp.message(Command("model"))(self.cmd_model)
         self.dp.message(Command("bash"))(self.cmd_bash)
+        self.dp.message(Command("mcp"))(self.cmd_mcp)
+        self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
         self.dp.message(F.text.startswith("/"))(self.unimplemented_command)
@@ -101,7 +104,7 @@ class SunflowerBot:
         await message.answer(status_text, parse_mode="Markdown")
 
     async def cmd_tools(self, message: types.Message):
-        schemas = PluginManager.get_all_schemas()
+        schemas = await PluginManager.get_all_schemas()
         if not schemas:
             await message.answer("No active plugins/tools loaded.")
             return
@@ -120,7 +123,7 @@ class SunflowerBot:
             PluginManager.load_plugins()
             await message.answer("🔄 Plugins directory re-scanned and hot-reloaded.")
             
-        schemas = PluginManager.get_all_schemas()
+        schemas = await PluginManager.get_all_schemas()
         if not schemas:
             await message.answer("📁 No active plugins loaded.\nUse `/plugins reload` to rescan.", parse_mode="Markdown")
             return
@@ -174,6 +177,45 @@ class SunflowerBot:
             
         self.session_configs[user_id]["think"] = level
         await message.answer(f"💭 Thinking Level set to: **{level.upper()}**", parse_mode="Markdown")
+
+    async def cmd_mcp(self, message: types.Message):
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 2:
+            await message.answer("Usage: `/mcp show`, `/mcp set <name>=<json>`, `/mcp unset <name>`", parse_mode="Markdown")
+            return
+            
+        action = parts[1].lower()
+        if action == "show":
+            config = self.config.get_mcp_config()
+            import json
+            await message.answer(f"🔌 *MCP Servers*\n```json\n{json.dumps(config, indent=2)}\n```", parse_mode="Markdown")
+        elif action == "set":
+            if len(parts) < 3 or "=" not in parts[2]:
+                await message.answer("Usage: `/mcp set <name>=<json>`", parse_mode="Markdown")
+                return
+            kw = parts[2].split("=", 1)
+            name = kw[0].strip()
+            val = kw[1].strip()
+            import json
+            try:
+                config_dict = json.loads(val)
+                self.config.set_mcp_config(name, config_dict)
+                await message.answer(f"✅ Saved MCP config for `{name}`. Please run `/restart` to apply.", parse_mode="Markdown")
+            except json.JSONDecodeError as e:
+                await message.answer(f"❌ Invalid JSON format: {str(e)}")
+        elif action == "unset":
+            if len(parts) < 3:
+                await message.answer("Usage: `/mcp unset <name>`", parse_mode="Markdown")
+                return
+            name = parts[2].strip()
+            if self.config.delete_mcp_config(name):
+                await message.answer(f"✅ Removed MCP config for `{name}`. Please run `/restart` to apply.", parse_mode="Markdown")
+            else:
+                await message.answer(f"❌ MCP config `{name}` not found.", parse_mode="Markdown")
+
+    async def cmd_restart(self, message: types.Message):
+        await message.answer("🔄 Restarting bot gateway...\n*(It will be back online in a few seconds)*", parse_mode="Markdown")
+        await self.dp.stop_polling()
 
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
@@ -303,7 +345,9 @@ class SunflowerBot:
     async def run(self):
         print("🌻 Sunflower is starting...")
         try:
+            await McpManager.start_all(self.config)
             await self._set_bot_commands()
             await self.dp.start_polling(self.bot)
         finally:
+            await McpManager.close()
             await self.bot.session.close()

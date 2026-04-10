@@ -15,7 +15,7 @@ class LLMClient:
             
             MAX_HOPS = 7
             for hop in range(MAX_HOPS):
-                tools = PluginManager.get_all_schemas()
+                tools = await PluginManager.get_all_schemas()
                 
                 if tools:
                     response = self.client.chat.completions.create(
