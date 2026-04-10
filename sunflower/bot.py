@@ -25,11 +25,17 @@ class SunflowerBot:
         
         # Chat histories (Simple dict for v1.0.0)
         self.histories = {}
+        # Per-user routing configs (e.g. verbose, think mode)
+        self.session_configs = {}
 
         self._register_handlers()
 
     def _register_handlers(self):
         self.dp.message(Command("start"))(self.cmd_start)
+        self.dp.message(Command("new"))(self.cmd_new)
+        self.dp.message(Command("status"))(self.cmd_status)
+        self.dp.message(Command("verbose"))(self.cmd_verbose)
+        self.dp.message(Command("think"))(self.cmd_think)
         self.dp.message(Command("model"))(self.cmd_model)
         self.dp.message(Command("bash"))(self.cmd_bash)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
@@ -70,6 +76,54 @@ class SunflowerBot:
         # Run command securely and return output
         result = await ToolRegistry.execute_bash(cmd)
         await message.answer(result, parse_mode="Markdown")
+
+    async def cmd_new(self, message: types.Message):
+        user_id = message.from_user.id
+        self.histories[user_id] = []
+        await message.answer("✨ Session reset. All previous memory has been cleared! I am ready for a new task.", parse_mode="Markdown")
+
+    async def cmd_status(self, message: types.Message):
+        user_id = message.from_user.id
+        memory_turns = len(self.histories.get(user_id, [])) // 2
+        model = self.config.default_model
+        cfg = self.session_configs.get(user_id, {"verbose": False, "think": "off"})
+        
+        status_text = (
+            f"📊 *Sunflower Status*\n\n"
+            f"🧠 **Model:** `{model}`\n"
+            f"💭 **Think Level:** `{cfg['think'].upper()}`\n"
+            f"🔍 **Verbose Mode:** `{'ON' if cfg['verbose'] else 'OFF'}`\n"
+            f"📁 **Memory Used:** `{memory_turns}` conversational turns"
+        )
+        await message.answer(status_text, parse_mode="Markdown")
+
+    async def cmd_verbose(self, message: types.Message):
+        user_id = message.from_user.id
+        if user_id not in self.session_configs:
+            self.session_configs[user_id] = {"verbose": False, "think": "off"}
+            
+        current = self.session_configs[user_id]["verbose"]
+        self.session_configs[user_id]["verbose"] = not current
+        new_state = "ON" if not current else "OFF"
+        await message.answer(f"🔍 Verbose Mode is now **{new_state}**.", parse_mode="Markdown")
+
+    async def cmd_think(self, message: types.Message):
+        user_id = message.from_user.id
+        if user_id not in self.session_configs:
+            self.session_configs[user_id] = {"verbose": False, "think": "off"}
+            
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("Please provide a level:\n`/think off|minimal|low|medium|high|xhigh`", parse_mode="Markdown")
+            return
+            
+        level = parts[1].lower()
+        if level not in ["off", "minimal", "low", "medium", "high", "xhigh"]:
+            await message.answer("Invalid level. Choose: `off|minimal|low|medium|high|xhigh`", parse_mode="Markdown")
+            return
+            
+        self.session_configs[user_id]["think"] = level
+        await message.answer(f"💭 Thinking Level set to: **{level.upper()}**", parse_mode="Markdown")
 
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
@@ -112,13 +166,33 @@ class SunflowerBot:
         user_id = message.from_user.id
         if user_id not in self.histories:
             self.histories[user_id] = []
+        if user_id not in self.session_configs:
+            self.session_configs[user_id] = {"verbose": False, "think": "off"}
+
+        user_cfg = self.session_configs[user_id]
 
         # Append user message
         self.histories[user_id].append({"role": "user", "content": message.text})
+        
+        # Build injected history for API call
+        injected_history = self.histories[user_id].copy()
+        if user_cfg["think"] != "off":
+            think_instructions = {
+                "minimal": "Take a brief moment to reason step-by-step before answering.",
+                "low": "Reason clearly step-by-step in <think> tags before answering.",
+                "medium": "Reason extensively step-by-step in <think> tags considering alternatives before answering.",
+                "high": "Perform a massive multi-step logical deduction in <think> tags prior to answering.",
+                "xhigh": "You are in maximum reasoning mode. Output exhaustive stream-of-consciousness logic in <think> tags. Do not skip any thought."
+            }
+            system_msg = {"role": "system", "content": think_instructions[user_cfg["think"]]}
+            injected_history.insert(0, system_msg)
+
+        if user_cfg["verbose"]:
+            await message.answer("⚙️ *Verbose:* Compiling context and sending to OpenRouter...", parse_mode="Markdown")
 
         # Get response
         await self.bot.send_chat_action(user_id, "typing")
-        response_text = await self.llm.chat(self.histories[user_id])
+        response_text = await self.llm.chat(injected_history)
 
         # Append assistant message
         self.histories[user_id].append({"role": "assistant", "content": response_text})
