@@ -1,5 +1,5 @@
 from openai import OpenAI
-from config import Config
+from sunflower.config import Config
 
 class LLMClient:
     def __init__(self, config: Config):

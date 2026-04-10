@@ -6,8 +6,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from config import Config
-from llm import LLMClient
+from sunflower.config import Config
+from sunflower.llm import LLMClient
 
 # States for Model Selection
 class ModelStates(StatesGroup):

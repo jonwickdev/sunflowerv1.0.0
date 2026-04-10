@@ -1,8 +1,8 @@
 import asyncio
 import os
-from onboarding import run_onboarding
-from bot import SunflowerBot
-from config import Config
+from sunflower.onboarding import run_onboarding
+from sunflower.bot import SunflowerBot
+from sunflower.config import Config
 
 def main():
     # Check if onboarding is needed
