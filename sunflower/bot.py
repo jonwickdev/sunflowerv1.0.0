@@ -34,6 +34,7 @@ class SunflowerBot:
         self.dp.message(Command("start"))(self.cmd_start)
         self.dp.message(Command("new"))(self.cmd_new)
         self.dp.message(Command("status"))(self.cmd_status)
+        self.dp.message(Command("tools"))(self.cmd_tools)
         self.dp.message(Command("verbose"))(self.cmd_verbose)
         self.dp.message(Command("think"))(self.cmd_think)
         self.dp.message(Command("model"))(self.cmd_model)
@@ -96,6 +97,14 @@ class SunflowerBot:
             f"📁 **Memory Used:** `{memory_turns}` conversational turns"
         )
         await message.answer(status_text, parse_mode="Markdown")
+
+    async def cmd_tools(self, message: types.Message):
+        await message.answer(
+            "🛠️ *Autonomous Tools*\n\n"
+            "• `execute_bash(command)`: Executes a shell command in the local environment.\n\n"
+            "The AI evaluates your questions and calls these tools silently in the background when it needs information from the system to solve an objective.",
+            parse_mode="Markdown"
+        )
 
     async def cmd_verbose(self, message: types.Message):
         user_id = message.from_user.id
