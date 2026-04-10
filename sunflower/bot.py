@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 
 from sunflower.config import Config
 from sunflower.llm import LLMClient
-from sunflower.tools import ToolRegistry
+from sunflower.tools import PluginManager
 
 # States for Model Selection
 class ModelStates(StatesGroup):
@@ -23,10 +23,12 @@ class SunflowerBot:
         self.dp = Dispatcher(storage=MemoryStorage())
         self.llm = LLMClient(self.config)
         
-        # Chat histories (Simple dict for v1.0.0)
         self.histories = {}
         # Per-user routing configs (e.g. verbose, think mode)
         self.session_configs = {}
+
+        # Scan the sunflower/plugins folder and dynamically load all capabilities
+        PluginManager.load_plugins()
 
         self._register_handlers()
 
@@ -34,6 +36,8 @@ class SunflowerBot:
         self.dp.message(Command("start"))(self.cmd_start)
         self.dp.message(Command("new"))(self.cmd_new)
         self.dp.message(Command("status"))(self.cmd_status)
+        self.dp.message(Command("plugins"))(self.cmd_plugins)
+        self.dp.message(Command("skill"))(self.cmd_skill)
         self.dp.message(Command("tools"))(self.cmd_tools)
         self.dp.message(Command("verbose"))(self.cmd_verbose)
         self.dp.message(Command("think"))(self.cmd_think)
@@ -71,12 +75,10 @@ class SunflowerBot:
             return
             
         cmd = parts[1]
-        # Notify user that execution has started
         await message.answer(f"⚙️ Executing: `{cmd}`...", parse_mode="Markdown")
         
-        # Run command securely and return output
-        result = await ToolRegistry.execute_bash(cmd)
-        await message.answer(result, parse_mode="Markdown")
+        result = await PluginManager.execute_tool("execute_bash", {"command": cmd})
+        await message.answer(result[:4000], parse_mode="Markdown")
 
     async def cmd_new(self, message: types.Message):
         user_id = message.from_user.id
@@ -99,12 +101,51 @@ class SunflowerBot:
         await message.answer(status_text, parse_mode="Markdown")
 
     async def cmd_tools(self, message: types.Message):
-        await message.answer(
-            "🛠️ *Autonomous Tools*\n\n"
-            "• `execute_bash(command)`: Executes a shell command in the local environment.\n\n"
-            "The AI evaluates your questions and calls these tools silently in the background when it needs information from the system to solve an objective.",
-            parse_mode="Markdown"
-        )
+        schemas = PluginManager.get_all_schemas()
+        if not schemas:
+            await message.answer("No active plugins/tools loaded.")
+            return
+            
+        text = "🛠️ *Autonomous Tools*\n\n"
+        for s in schemas:
+            name = s.get("function", {}).get("name", "Unknown")
+            desc = s.get("function", {}).get("description", "No description")
+            text += f"• `{name}`: {desc}\n\n"
+        text += "The AI evaluates your questions and calls these tools silently in the background."
+        await message.answer(text, parse_mode="Markdown")
+
+    async def cmd_plugins(self, message: types.Message):
+        parts = message.text.split()
+        if len(parts) > 1 and parts[1].lower() == "reload":
+            PluginManager.load_plugins()
+            await message.answer("🔄 Plugins directory re-scanned and hot-reloaded.")
+            
+        schemas = PluginManager.get_all_schemas()
+        if not schemas:
+            await message.answer("📁 No active plugins loaded.\nUse `/plugins reload` to rescan.", parse_mode="Markdown")
+            return
+            
+        text = "🔌 *Active Plugins*\n\n"
+        for s in schemas:
+            name = s.get("function", {}).get("name", "Unknown")
+            text += f"• `{name}`\n"
+            
+        await message.answer(text, parse_mode="Markdown")
+
+    async def cmd_skill(self, message: types.Message):
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            await message.answer("Usage: `/skill <plugin_name> <json_args>`", parse_mode="Markdown")
+            return
+            
+        name = parts[1]
+        try:
+            import json
+            args = json.loads(parts[2])
+            result = await PluginManager.execute_tool(name, args)
+            await message.answer(f"⚙️ Execution Result:\n{str(result)[:3900]}", parse_mode="Markdown")
+        except Exception as e:
+            await message.answer(f"❌ Skill Error: {str(e)}")
 
     async def cmd_verbose(self, message: types.Message):
         user_id = message.from_user.id
