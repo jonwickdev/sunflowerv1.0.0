@@ -89,6 +89,30 @@ Your bot is now alive 24/7! It will automatically restart on server reboots.
 
 ---
 
+### Option C: Paperclip Orchestration Server (Optional)
+*Best for offloading huge multi-agent asynchronous workflows beyond telegram 7-hop limits.*
+
+If you want Sunflower to act as the "CEO" and automatically hire/dispatch tasks to background workers, you can easily spin up the Paperclip backend on the exact same server!
+
+**1. Run the automatic installer script**
+```bash
+chmod +x install_paperclip.sh
+./install_paperclip.sh
+```
+
+**2. Configure the Telegram Bot**
+After the script finishes, navigate to `http://<Your-Server-IP>:3100` to complete the Paperclip onboarding.
+Once inside the Paperclip Dashboard, go to **Agents -> Generate API Key**.
+
+Tell Sunflower in Telegram about its new company:
+```text
+/paperclip set_url http://<Your-Server-IP>:3100
+/paperclip set_company <Found_In_The_Paperclip_Browser_URL>
+/paperclip set_key <Your_Generated_Secret_Key>
+```
+
+---
+
 ## Usage
 1. Open Telegram and find your bot (via [@BotFather](https://t.me/botfather)).
 2. Click **Start** or type `/start`.
