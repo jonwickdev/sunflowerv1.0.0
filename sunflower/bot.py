@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, BotCommand
 
 from sunflower.config import Config
 from sunflower.llm import LLMClient
+from sunflower.tools import ToolRegistry
 
 # States for Model Selection
 class ModelStates(StatesGroup):
@@ -30,6 +31,7 @@ class SunflowerBot:
     def _register_handlers(self):
         self.dp.message(Command("start"))(self.cmd_start)
         self.dp.message(Command("model"))(self.cmd_model)
+        self.dp.message(Command("bash"))(self.cmd_bash)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
         self.dp.message(F.text.startswith("/"))(self.unimplemented_command)
@@ -54,6 +56,20 @@ class SunflowerBot:
             "Just type a message to chat!".format(self.config.default_model),
             parse_mode="Markdown"
         )
+
+    async def cmd_bash(self, message: types.Message):
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("Please provide a command to run (e.g. `/bash ls -la`)", parse_mode="Markdown")
+            return
+            
+        cmd = parts[1]
+        # Notify user that execution has started
+        await message.answer(f"⚙️ Executing: `{cmd}`...", parse_mode="Markdown")
+        
+        # Run command securely and return output
+        result = await ToolRegistry.execute_bash(cmd)
+        await message.answer(result, parse_mode="Markdown")
 
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
