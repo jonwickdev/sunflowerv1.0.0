@@ -18,6 +18,17 @@ class Config:
             data = json.load(f)
             return data.get("default_model", "openai/gpt-3.5-turbo")
 
+    def get_paperclip_config(self):
+        data = self._read_config()
+        return data.get("paperclip", {})
+
+    def set_paperclip_config(self, key, value):
+        data = self._read_config()
+        if "paperclip" not in data:
+            data["paperclip"] = {}
+        data["paperclip"][key] = value
+        self._write_config(data)
+
     def _read_config(self):
         if not os.path.exists(self.config_file):
             return {}

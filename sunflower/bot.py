@@ -45,6 +45,7 @@ class SunflowerBot:
         self.dp.message(Command("model"))(self.cmd_model)
         self.dp.message(Command("bash"))(self.cmd_bash)
         self.dp.message(Command("mcp"))(self.cmd_mcp)
+        self.dp.message(Command("paperclip"))(self.cmd_paperclip)
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -217,6 +218,44 @@ class SunflowerBot:
         await message.answer("🔄 Restarting bot gateway...\n*(It will be back online in a few seconds)*", parse_mode="Markdown")
         await self.dp.stop_polling()
 
+    async def cmd_paperclip(self, message: types.Message):
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 2:
+            await message.answer(
+                "📎 *Paperclip Setup*\n\n"
+                "To configure your Paperclip orchestrator connection:\n"
+                "`/paperclip set_url <url>` (e.g. http://localhost:3100)\n"
+                "`/paperclip set_key <api_key>`\n"
+                "`/paperclip set_company <company_id>`\n"
+                "`/paperclip status`", parse_mode="Markdown"
+            )
+            return
+            
+        action = parts[1].lower()
+        if action == "status":
+            url = self.config.get_paperclip_config().get("url", "Not Set")
+            company = self.config.get_paperclip_config().get("company_id", "Not Set")
+            key_set = "✅ Set" if self.config.get_paperclip_config().get("api_key") else "❌ Not Set"
+            await message.answer(f"📊 *Paperclip Status*\nURL: `{url}`\nCompany ID: `{company}`\nAPI Key: {key_set}", parse_mode="Markdown")
+            return
+            
+        if len(parts) < 3:
+            await message.answer(f"Usage: `/paperclip {action} <value>`", parse_mode="Markdown")
+            return
+            
+        value = parts[2].strip()
+        if action == "set_url":
+            self.config.set_paperclip_config("url", value)
+            await message.answer(f"✅ Paperclip URL set to `{value}`", parse_mode="Markdown")
+        elif action == "set_key":
+            self.config.set_paperclip_config("api_key", value)
+            await message.answer(f"✅ Paperclip API Key updated.", parse_mode="Markdown")
+        elif action == "set_company":
+            self.config.set_paperclip_config("company_id", value)
+            await message.answer(f"✅ Paperclip Company ID set to `{value}`", parse_mode="Markdown")
+        else:
+            await message.answer("Unknown action. Try `/paperclip set_url`, `set_key`, or `set_company`.")
+            
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
         await message.answer(
