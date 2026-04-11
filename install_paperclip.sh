@@ -22,8 +22,10 @@ echo -e "${GREEN}🌻 [3/5] Setting up persistent Authentication & Permissions..
 SECRET_FILE="paperclip_repo/docker/.env"
 if [ ! -f "$SECRET_FILE" ]; then
     RANDOM_SECRET="paperclip-secret-$(date +%s)$RANDOM"
+    IPV4_AUTODETECT=$(curl -s -4 ifconfig.me)
     echo "BETTER_AUTH_SECRET=$RANDOM_SECRET" > "$SECRET_FILE"
     echo "PAPERCLIP_PORT=3100" >> "$SECRET_FILE"
+    echo "PAPERCLIP_PUBLIC_URL=http://$IPV4_AUTODETECT:3100" >> "$SECRET_FILE"
     echo "PAPERCLIP_DEPLOYMENT_MODE=authenticated" >> "$SECRET_FILE"
     echo "PAPERCLIP_DEPLOYMENT_EXPOSURE=private" >> "$SECRET_FILE"
 fi
