@@ -10,6 +10,8 @@ from sunflower.config import Config
 from sunflower.llm import LLMClient
 from sunflower.tools import PluginManager
 from sunflower.mcp_manager import McpManager
+from sunflower.hq_manager import HqManager
+from sunflower.worker import HighCommandWorker
 
 # States for Model Selection
 class ModelStates(StatesGroup):
@@ -23,6 +25,8 @@ class SunflowerBot:
         self.bot = Bot(token=self.config.bot_token)
         self.dp = Dispatcher(storage=MemoryStorage())
         self.llm = LLMClient(self.config)
+        self.hq = HqManager()
+        self.worker = HighCommandWorker(self.config, self.hq, self.bot)
         
         self.histories = {}
         # Per-user routing configs (e.g. verbose, think mode)
@@ -45,6 +49,8 @@ class SunflowerBot:
         self.dp.message(Command("model"))(self.cmd_model)
         self.dp.message(Command("bash"))(self.cmd_bash)
         self.dp.message(Command("mcp"))(self.cmd_mcp)
+        self.dp.message(Command("tasks"))(self.cmd_tasks)
+        self.dp.message(Command("delegate"))(self.cmd_delegate)
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -217,6 +223,32 @@ class SunflowerBot:
         await message.answer("🔄 Restarting bot gateway...\n*(It will be back online in a few seconds)*", parse_mode="Markdown")
         await self.dp.stop_polling()
 
+    async def cmd_tasks(self, message: types.Message):
+        user_id = message.from_user.id
+        tasks = await self.hq.get_active_tasks(user_id)
+        
+        if not tasks:
+            await message.answer("📭 No active background tasks for you.")
+            return
+            
+        text = "📊 *Active High-Command Missions*\n\n"
+        for t in tasks:
+            status_emoji = "⏳" if t['status'] == 'queued' else "⚙️"
+            text += f"{status_emoji} **T-{t['id']}**: {t['goal'][:50]}...\n   Status: `{t['status'].upper()}`\n\n"
+        
+        await message.answer(text, parse_mode="Markdown")
+
+    async def cmd_delegate(self, message: types.Message):
+        user_id = message.from_user.id
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("Usage: `/delegate <major_goal>`", parse_mode="Markdown")
+            return
+            
+        goal = parts[1]
+        task_id = await self.hq.create_task(goal, user_id)
+        await message.answer(f"🚀 *Task #{task_id} Delegated*\nThe background High-Command worker has received your goal and will start planning shortly.", parse_mode="Markdown")
+
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
         await message.answer(
@@ -284,7 +316,7 @@ class SunflowerBot:
 
         # Get response
         await self.bot.send_chat_action(user_id, "typing")
-        response_text = await self.llm.chat(injected_history)
+        response_text = await self.llm.chat(injected_history, user_id=user_id)
 
         # Append assistant message
         self.histories[user_id].append({"role": "assistant", "content": response_text})
@@ -315,6 +347,7 @@ class SunflowerBot:
             BotCommand(command="tools", description="Shows what the current agent can use right now"),
             BotCommand(command="status", description="Shows runtime status and provider usage"),
             BotCommand(command="tasks", description="Lists active/recent background tasks"),
+            BotCommand(command="delegate", description="Delegates a mission to High-Command"),
             BotCommand(command="context", description="Explains how context is assembled"),
             BotCommand(command="export", description="Exports the current session to HTML"),
             BotCommand(command="whoami", description="Shows your sender id"),
@@ -345,9 +378,14 @@ class SunflowerBot:
     async def run(self):
         print("🌻 Sunflower is starting...")
         try:
+            await self.hq.initialize()
+            # Start the background worker
+            asyncio.create_task(self.worker.start_loop())
+            
             await McpManager.start_all(self.config)
             await self._set_bot_commands()
             await self.dp.start_polling(self.bot)
         finally:
+            self.worker.stop()
             await McpManager.close()
             await self.bot.session.close()

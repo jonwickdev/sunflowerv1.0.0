@@ -11,7 +11,7 @@ class BasePlugin:
         return {}
         
     @classmethod
-    async def execute(cls, **kwargs) -> str:
+    async def execute(cls, user_id: int = 0, **kwargs) -> str:
         """Executes the plugin logic."""
         return ""
 
@@ -62,14 +62,19 @@ class PluginManager:
         return schemas
         
     @classmethod
-    async def execute_tool(cls, name: str, kwargs: dict) -> str:
+    async def execute_tool(cls, name: str, kwargs: dict, user_id: int = 0) -> str:
         if name.startswith("mcp__"):
             from sunflower.mcp_manager import McpManager
             return await McpManager.execute_tool(name, kwargs)
 
+        # Re-scan for newly added plugins if necessary
+        if not cls._plugins:
+            cls.load_plugins()
+
         if name in cls._plugins:
             try:
-                return await cls._plugins[name].execute(**kwargs)
+                plugin = cls._plugins[name]
+                return await plugin.execute(user_id=user_id, **kwargs)
             except Exception as e:
                 return f"Error executing plugin {name}: {str(e)}"
         return f"Plugin {name} not found."

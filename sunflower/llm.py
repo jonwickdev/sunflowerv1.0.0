@@ -9,7 +9,7 @@ class LLMClient:
             api_key=self.config.api_key,
         )
 
-    async def chat(self, history: list) -> str:
+    async def chat(self, history: list, user_id: int = 0) -> str:
         try:
             from sunflower.tools import PluginManager
             
@@ -42,7 +42,7 @@ class LLMClient:
                         try:
                             args = json.loads(tool_call.function.arguments)
                             print(f"[PLUGIN EXECUTION] AI invoked {name}")
-                            result = await PluginManager.execute_tool(name, args)
+                            result = await PluginManager.execute_tool(name, args, user_id=user_id)
                         except Exception as e:
                             result = f"Error parsing tool args or executing: {str(e)}"
                             

@@ -94,9 +94,27 @@ Your bot is now alive 24/7! It will automatically restart on server reboots.
 2. Click **Start** or type `/start`.
 3. Just send a message to chat, or type `/model` to search and switch between AI brains!
 
-## Architecture
-- `sunflower/main.py`: Python module entry point.
-- `sunflower/bot.py`: Telegram handlers and FSM (Finite State Machine).
-- `sunflower/llm.py`: OpenRouter API client.
-- `sunflower/config.py`: Manages secrets (`.env`) and state (`config.json`).
-- `Dockerfile` & `docker-compose.yml`: VPS container definitions.
+## 🚀 Sunflower High-Command (Native Orchestration)
+
+Sunflower now features a built-in, lightweight background worker system. Unlike complex external frameworks, High-Command is native, private, and runs entirely on your VPS with zero extra setup.
+
+### How it works:
+1. **Delegation**: Use `/delegate <goal>` or tell Sunflower in chat to "Handle this in the background."
+2. **Planning**: High-Command creates a `plan.md` strategy for the goal.
+3. **Execution**: A persistent background worker loops through the plan, using tools autonomously.
+4. **Audit Trail**: Every action is recorded in `log.md` and a `final_report.md` is generated upon completion.
+5. **Transparency**: Monitor all active missions with the `/tasks` command.
+
+### Features:
+- **Zero-Infra**: No extra ports, Docker containers, or database servers required.
+- **Persistent**: Background tasks survive bot restarts and server reboots.
+- **Multi-Agent**: Supports custom personas (General, CTO, Researcher, Marketer).
+
+---
+
+## 🛠️ Architecture
+- `sunflower/hq/`: The Command Room core.
+- `sunflower/hq_manager.py`: The Ledger (SQLite).
+- `sunflower/worker.py`: The Execution Engine.
+- `sunflower/bot.py`: Telegram interface & CEO router.
+- `sunflower/plugins/hq_plugin.py`: The AI delegation skill.
