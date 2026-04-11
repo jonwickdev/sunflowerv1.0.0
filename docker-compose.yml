@@ -11,3 +11,4 @@ services:
     # We map config.json so the model selection state persists even if the container restarts
     volumes:
       - ./config.json:/app/config.json
+      - ./sunflower/hq:/app/sunflower/hq
