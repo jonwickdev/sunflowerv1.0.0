@@ -43,7 +43,7 @@ class BrowserPlugin(BasePlugin):
         manager = BrowserManager(config)
         
         # Start the task
-        result = await manager.run_web_task(task, user_id, mode)
+        result = await manager.run_web_task(task, user_id)
         
         if "error" in result:
             return result["error"]
