@@ -5,10 +5,24 @@ services:
     build: .
     container_name: sunflower_bot
     restart: unless-stopped
-    # It reads your OpenRouter and Telegram keys straight from the .env file
+    depends_on:
+      - browser
     env_file:
       - .env
-    # We map config.json so the model selection state persists even if the container restarts
     volumes:
       - ./config.json:/app/config.json
       - ./sunflower/hq:/app/sunflower/hq
+      - ./sunflower/vault:/app/sunflower/vault
+
+  browser:
+    image: browserless/chrome:latest
+    container_name: sunflower_browser
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - MAX_CONCURRENT_SESSIONS=5
+      - KEEP_ALIVE=true
+      - WORKSPACE_DIR=/app/sunflower/vault
+    volumes:
+      - ./sunflower/vault/browser:/app/sunflower/vault

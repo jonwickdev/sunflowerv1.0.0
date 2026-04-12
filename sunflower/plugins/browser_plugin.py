@@ -39,4 +39,14 @@ class BrowserPlugin(BasePlugin):
         if "error" in result:
             return f"❌ Mission Failed: {result['error']}"
             
-        return result.get("output", "🚀 Mission started. Monitor real-time status updates below.")
+        output = result.get("output", "Mission initiated.")
+        live_url = result.get("live_url")
+        
+        response = f"🌐 *Sovereign Mission Engaged*\nGoal: {task}\n\n"
+        response += output
+        
+        if live_url:
+            response += f"\n\n📺 *Visual Rescue Portal*: [Open VPS Browser]({live_url})\n"
+            response += "_Use this to solve CAPTCHA walls or watch the agent live._"
+        
+        return response

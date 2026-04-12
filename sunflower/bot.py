@@ -119,7 +119,26 @@ class SunflowerBot:
             f"📚 *Context:* `{memory_turns} turns`"
         )
         await message.answer(status_text, parse_mode="Markdown")
-        await message.answer(status_text)
+
+    async def cmd_auth(self, message: types.Message):
+        """Secure Cookie Handshake for session persistence."""
+        user_id = message.from_user.id
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("🔑 *Cookie Handshake*\nUsage: `/auth <json_cookies>`\n\nExport cookies (using 'EditThisCookie' or similar) and paste them here to stay logged in forever.", parse_mode="Markdown")
+            return
+            
+        try:
+            cookie_data = json.loads(parts[1])
+            vault_path = os.path.join(os.getcwd(), "sunflower", "vault", "browser", "cookies.json")
+            os.makedirs(os.path.dirname(vault_path), exist_ok=True)
+            
+            with open(vault_path, "w") as f:
+                json.dump(cookie_data, f)
+                
+            await message.answer("✅ *Handshake Successful*\nYour session cookies have been injected into the Sovereign Vault. Sequoia is now authenticated.", parse_mode="Markdown")
+        except Exception as e:
+            await message.answer(f"❌ *Handshake Failed*: {str(e)}")
 
     async def cmd_tools(self, message: types.Message):
         schemas = await PluginManager.get_all_schemas()
@@ -586,7 +605,7 @@ class SunflowerBot:
             BotCommand(command="commands", description="List the command catalog"),
             BotCommand(command="stop", description="Abort the current chat generation"),
             BotCommand(command="compact", description="Summarize and archive context"),
-            BotCommand(command="whoami", description="Show your user identity"),
+            BotCommand(command="auth", description="Perform a cookie handshake for persistence"),
             BotCommand(command="restart", description="Restart the bot gateway"),
         ]
         await self.bot.set_my_commands(commands)
