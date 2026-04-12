@@ -229,79 +229,97 @@ class SunflowerBot:
         await self.dp.stop_polling()
 
     async def cmd_tasks(self, message: types.Message):
-        user_id = message.from_user.id
-        tasks = await self.hq.get_active_tasks(user_id)
-        
-        if not tasks:
-            await message.answer("📭 No active background tasks for you.")
-            return
+        try:
+            user_id = message.from_user.id
+            tasks = await self.hq.get_active_tasks(user_id)
             
-        text = "📊 *Active High-Command Missions*\n\n"
-        for t in tasks:
-            status_emoji = "⏳" if t['status'] == 'queued' else "⚙️"
-            text += f"{status_emoji} *T-{t['id']}*: {t['goal'][:50]}...\n   Status: `{t['status'].upper()}`\n\n"
-        
-        await message.answer(text, parse_mode="Markdown")
+            if not tasks:
+                await message.answer("No active background tasks for you.")
+                return
+                
+            text = "*Active High-Command Missions*\n\n"
+            for t in tasks:
+                status_emoji = "⏳" if t['status'] == 'queued' else "⚙️"
+                text += f"{status_emoji} *T-{t['id']}*: {t['goal'][:50]}...\n   Status: `{t['status'].upper()}`\n\n"
+            
+            await message.answer(text, parse_mode="Markdown")
+        except Exception as e:
+            print(f"cmd_tasks error: {e}")
+            await message.answer(f"Error fetching tasks: {str(e)[:200]}")
 
     async def cmd_delegate(self, message: types.Message):
-        user_id = message.from_user.id
-        parts = message.text.split(maxsplit=1)
-        if len(parts) < 2:
-            await message.answer("Usage: `/delegate <major_goal>`", parse_mode="Markdown")
-            return
-            
-        goal = parts[1]
-        task_id = await self.hq.create_task(goal, user_id)
-        self.scheduler.trigger_update() # Wake up scheduler to see if we should start now
-        await message.answer(f"🚀 *Task #{task_id} Delegated*\nThe background High-Command worker has received your goal and will start planning shortly.", parse_mode="Markdown")
+        try:
+            user_id = message.from_user.id
+            parts = message.text.split(maxsplit=1)
+            if len(parts) < 2:
+                await message.answer("Usage: /delegate <major goal>")
+                return
+                
+            goal = parts[1]
+            task_id = await self.hq.create_task(goal, user_id)
+            self.scheduler.trigger_update()
+            await message.answer(f"Task #{task_id} Delegated\nThe background High-Command worker has received your goal and will start planning shortly.")
+        except Exception as e:
+            print(f"cmd_delegate error: {e}")
+            await message.answer(f"Error delegating task: {str(e)[:200]}")
 
     async def cmd_timezone(self, message: types.Message):
-        parts = message.text.split()
-        if len(parts) < 2:
-            await message.answer("🌍 *Timezone Selection*\n\nPlease specify your timezone (e.g., `America/Chicago`, `Asia/Tokyo`).\n\nUsage: `/timezone America/Chicago`", parse_mode="Markdown")
-            return
-        
-        tz = parts[1]
-        # Basic validation with pytz could be added here
-        await self.hq.set_user_setting(message.from_user.id, "timezone", tz)
-        await message.answer(f"✅ *Timezone Saved*: `{tz}`\nSunflower will now use this for all your scheduled tasks.", parse_mode="Markdown")
+        try:
+            parts = message.text.split()
+            if len(parts) < 2:
+                await message.answer("Timezone Selection\n\nPlease specify your timezone (e.g., America/Chicago, Asia/Tokyo).\n\nUsage: /timezone America/Chicago")
+                return
+            
+            tz = parts[1]
+            await self.hq.set_user_setting(message.from_user.id, "timezone", tz)
+            await message.answer(f"Timezone Saved: {tz}\nSunflower will now use this for all your scheduled tasks.")
+        except Exception as e:
+            print(f"cmd_timezone error: {e}")
+            await message.answer(f"Error setting timezone: {str(e)[:200]}")
 
     async def cmd_schedule(self, message: types.Message):
-        parts = message.text.split(maxsplit=2)
-        if len(parts) < 3:
-            await message.answer("📅 *Schedule a Recurring Mission*\n\nUsage: `/schedule <frequency> <goal>`\nExample: `/schedule daily Scrape 500 sites in AI niche`", parse_mode="Markdown")
-            return
-        
-        frequency = parts[1].lower()
-        goal = parts[2]
-        import datetime
-        # Default to 9:00 AM next day for now
-        next_run = datetime.datetime.now() + datetime.timedelta(days=1)
-        next_run = next_run.replace(hour=9, minute=0, second=0, microsecond=0)
-        
-        await self.hq.add_schedule(message.from_user.id, goal, frequency, next_run)
-        self.scheduler.trigger_update()
-        await message.answer(f"✅ *Recurring Mission Scheduled*\nGoal: {goal}\nFrequency: `{frequency}`\nNext run: {next_run} (Server Time)", parse_mode="Markdown")
+        try:
+            parts = message.text.split(maxsplit=2)
+            if len(parts) < 3:
+                await message.answer("Schedule a Recurring Mission\n\nUsage: /schedule <frequency> <goal>\nExample: /schedule daily Scrape 500 sites in AI niche")
+                return
+            
+            frequency = parts[1].lower()
+            goal = parts[2]
+            import datetime
+            next_run = datetime.datetime.now() + datetime.timedelta(days=1)
+            next_run = next_run.replace(hour=9, minute=0, second=0, microsecond=0)
+            
+            await self.hq.add_schedule(message.from_user.id, goal, frequency, next_run)
+            self.scheduler.trigger_update()
+            await message.answer(f"Recurring Mission Scheduled\nGoal: {goal}\nFrequency: {frequency}\nNext run: {next_run} (Server Time)")
+        except Exception as e:
+            print(f"cmd_schedule error: {e}")
+            await message.answer(f"Error scheduling mission: {str(e)[:200]}")
 
     async def cmd_review(self, message: types.Message):
-        parts = message.text.split()
-        if len(parts) < 2:
-            await message.answer("Usage: `/review <task_id>`")
-            return
-        
-        task_id = int(parts[1])
-        details = await self.hq.get_task_details(task_id)
-        if not details:
-            await message.answer("Task not found.")
-            return
-        
-        text = f"🕵️ *CEO Audit Review: Task #{task_id}*\n"
-        text += f"Goal: {details['goal']}\n"
-        text += f"Quality Score: `{details.get('quality_score', 'N/A')}/10`\n"
-        text += f"Feedback: {details.get('feedback', 'No feedback provided.')}\n\n"
-        text += f"Report Path: `{details['report_path']}`"
-        
-        await message.answer(text, parse_mode="Markdown")
+        try:
+            parts = message.text.split()
+            if len(parts) < 2:
+                await message.answer("Usage: /review <task_id>")
+                return
+            
+            task_id = int(parts[1])
+            details = await self.hq.get_task_details(task_id)
+            if not details:
+                await message.answer("Task not found.")
+                return
+            
+            text = f"CEO Audit Review: Task #{task_id}\n"
+            text += f"Goal: {details['goal']}\n"
+            text += f"Quality Score: {details.get('quality_score', 'N/A')}/10\n"
+            text += f"Feedback: {details.get('feedback', 'No feedback provided.')}\n\n"
+            text += f"Report Path: {details.get('report_path', 'N/A')}"
+            
+            await message.answer(text)
+        except Exception as e:
+            print(f"cmd_review error: {e}")
+            await message.answer(f"Error reviewing task: {str(e)[:200]}")
 
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
@@ -395,50 +413,21 @@ class SunflowerBot:
         commands = [
             BotCommand(command="start", description="Start or wake up the bot"),
             BotCommand(command="new", description="Starts a new session"),
-            BotCommand(command="compact", description="Compacts the session context"),
-            BotCommand(command="stop", description="Aborts the current run"),
-            BotCommand(command="think", description="Sets the thinking level (off|minimal|low|medium|high|xhigh)"),
+            BotCommand(command="status", description="Shows runtime status"),
+            BotCommand(command="model", description="Change the AI model"),
+            BotCommand(command="think", description="Sets thinking level (off|minimal|low|medium|high|xhigh)"),
             BotCommand(command="verbose", description="Toggles verbose output"),
-            BotCommand(command="fast", description="Shows or sets fast mode"),
-            BotCommand(command="reasoning", description="Toggles reasoning visibility"),
-            BotCommand(command="elevated", description="Toggles elevated mode"),
-            BotCommand(command="exec", description="Shows or sets exec defaults"),
-            BotCommand(command="model", description="Shows or sets the artificial intelligence model"),
-            BotCommand(command="models", description="Lists providers or models for a provider"),
-            BotCommand(command="queue", description="Manages queue behavior"),
-            BotCommand(command="help", description="Shows the short help summary"),
-            BotCommand(command="commands", description="Shows the generated command catalog"),
-            BotCommand(command="tools", description="Shows what the current agent can use right now"),
-            BotCommand(command="status", description="Shows runtime status and provider usage"),
-            BotCommand(command="tasks", description="Lists active/recent background tasks"),
-            BotCommand(command="delegate", description="Delegates a mission to High-Command"),
-            BotCommand(command="context", description="Explains how context is assembled"),
-            BotCommand(command="export", description="Exports the current session to HTML"),
-            BotCommand(command="whoami", description="Shows your sender id"),
-            BotCommand(command="skill", description="Runs a skill by name"),
-            BotCommand(command="allowlist", description="Manages allowlist entries"),
-            BotCommand(command="approve", description="Resolves exec approval prompts"),
-            BotCommand(command="btw", description="Asks a side question without changing context"),
-            BotCommand(command="subagents", description="Manages sub-agent runs for the current session"),
-            BotCommand(command="acp", description="Manages ACP sessions and runtime options"),
-            BotCommand(command="focus", description="Binds the current chat to a session target"),
-            BotCommand(command="unfocus", description="Removes the current binding"),
-            BotCommand(command="agents", description="Lists thread-bound agents for the current session"),
-            BotCommand(command="kill", description="Aborts one or all running sub-agents"),
-            BotCommand(command="steer", description="Sends steering to a running sub-agent"),
-            BotCommand(command="config", description="Reads or writes system config"),
-            BotCommand(command="mcp", description="Reads or writes MCP config"),
-            BotCommand(command="plugins", description="Inspects or mutates plugin state"),
-            BotCommand(command="debug", description="Manages runtime-only config overrides"),
-            BotCommand(command="usage", description="Controls the per-response usage footer"),
-            BotCommand(command="tts", description="Controls Text-to-Speech"),
-            BotCommand(command="restart", description="Restarts the bot gateway"),
+            BotCommand(command="tools", description="Shows available tools"),
+            BotCommand(command="plugins", description="Inspect or reload plugins"),
+            BotCommand(command="mcp", description="Manage MCP server connections"),
+            BotCommand(command="bash", description="Run a host shell command"),
+            BotCommand(command="skill", description="Run a specific plugin by name"),
+            BotCommand(command="delegate", description="Delegate a mission to High-Command"),
+            BotCommand(command="tasks", description="List active background tasks"),
+            BotCommand(command="review", description="Review a mission quality audit"),
             BotCommand(command="timezone", description="Set your local timezone"),
             BotCommand(command="schedule", description="Schedule a recurring mission"),
-            BotCommand(command="review", description="Review a mission's quality audit"),
-            BotCommand(command="activation", description="Sets group activation mode"),
-            BotCommand(command="send", description="Sets send policy"),
-            BotCommand(command="bash", description="Runs a host shell command")
+            BotCommand(command="restart", description="Restart the bot gateway"),
         ]
         await self.bot.set_my_commands(commands)
 
