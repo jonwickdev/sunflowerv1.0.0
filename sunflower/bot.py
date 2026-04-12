@@ -249,22 +249,53 @@ class SunflowerBot:
             "/start - Wake up the bot",
             "/new - Reset current session history",
             "/status - Check model and system health",
-            "/compact - Summarize and archive chat context",
-            "/stop - Abort active chat generation",
-            "/delegate <goal> - Start a background HQ mission",
-            "/tasks - List active background tasks",
-            "/review <id> - Check a mission's quality audit",
-            "/schedule <freq> <goal> - Recurring missions",
-            "/timezone <tz> - Set your local time",
-            "/model - Change the AI brain",
-            "/think <level> - Set reasoning depth",
-            "/verbose - Toggle background logs",
-            "/bash <cmd> - Run a host shell command",
-            "/tools - List available agent capabilities",
+            "/models - Browse and pick AI brains",
+            "/config - Manage HQ settings",
+            "/plugins - List/Reload plugins",
+            "/mcp - Manage MCP servers",
+            "/bash - Run host shell command",
+            "/delegate - Start background mission",
+            "/tasks - List background tasks",
+            "/stop - Abort active AI response",
+            "/compact - Archive current context",
+            "/help - Sunflower Manifesto",
             "/whoami - Show your user identity",
             "/restart - Reboot the bot gateway"
         ]
         await message.answer("Available Slash Commands:\n\n" + "\n".join(cmds))
+
+    async def cmd_mcp(self, message: types.Message):
+        """Dedicated MCP server manager."""
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 2:
+            await message.answer("Usage: `/mcp show`, `/mcp set <name>=<json>`, `/mcp unset <name>`", parse_mode="Markdown")
+            return
+            
+        action = parts[1].lower()
+        if action == "show":
+            config = self.config.get_mcp_config()
+            import json
+            await message.answer(f"🔌 *MCP Servers*\n```json\n{json.dumps(config, indent=2)}\n```", parse_mode="Markdown")
+        elif action == "set":
+            if len(parts) < 3 or "=" not in parts[2]:
+                await message.answer("Usage: `/mcp set <name>=<json>`", parse_mode="Markdown")
+                return
+            name, val = parts[2].split("=", 1)
+            try:
+                import json
+                obj = json.loads(val)
+                self.config.set_mcp_config(name.strip(), obj)
+                await message.answer(f"✅ Saved MCP config for `{name}`. Run `/restart` to apply.", parse_mode="Markdown")
+            except Exception as e:
+                await message.answer(f"❌ Invalid JSON or config error: {str(e)}")
+        elif action == "unset":
+            if len(parts) < 3:
+                await message.answer("Usage: `/mcp unset <name>`", parse_mode="Markdown")
+                return
+            if self.config.delete_mcp_config(parts[2].strip()):
+                await message.answer(f"✅ Removed MCP server. Run `/restart` to apply.")
+            else:
+                await message.answer("❌ Server not found.")
 
     async def cmd_whoami(self, message: types.Message):
         """Simple identification check."""
