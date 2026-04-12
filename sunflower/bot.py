@@ -59,16 +59,7 @@ class SunflowerBot:
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
-        self.dp.message(F.text.startswith("/"))(self.unimplemented_command)
         self.dp.message()(self.handle_message)
-
-    async def unimplemented_command(self, message: types.Message):
-        cmd = message.text.split()[0]
-        await message.answer(
-            f"🚧 *Command not implemented natively yet!*\n\n"
-            f"The command `{cmd}` is registered in the menu, but its internal logic hasn't been built into Sunflower yet. Stay tuned!",
-            parse_mode="Markdown"
-        )
 
     async def cmd_start(self, message: types.Message):
         user_id = message.from_user.id
@@ -76,10 +67,9 @@ class SunflowerBot:
             self.histories[user_id] = []
             
         await message.answer(
-            "🌻 Hello! I am Sunflower. I am currently using the model: `{}`.\n\n"
-            "Use /model to change my brain.\n"
-            "Just type a message to chat!".format(self.config.default_model),
-            parse_mode="Markdown"
+            f"Sunflower is active. Using model: {self.config.default_model}\n\n"
+            "Use /model to change brain.\n"
+            "Just type a message to chat!"
         )
 
     async def cmd_bash(self, message: types.Message):
@@ -106,13 +96,13 @@ class SunflowerBot:
         cfg = self.session_configs.get(user_id, {"verbose": False, "think": "off"})
         
         status_text = (
-            f"📊 *Sunflower Status*\n\n"
-            f"🧠 Model: `{model}`\n"
-            f"💭 Think Level: `{cfg['think'].upper()}`\n"
-            f"🔍 Verbose Mode: `{'ON' if cfg['verbose'] else 'OFF'}`\n"
-            f"📁 Memory Used: `{memory_turns}` conversational turns"
+            "Sunflower Status\n\n"
+            f"Brain: {model}\n"
+            f"Think Level: {cfg['think'].upper()}\n"
+            f"Verbose Mode: {'ON' if cfg['verbose'] else 'OFF'}\n"
+            f"Conversation History: {memory_turns} turns"
         )
-        await message.answer(status_text, parse_mode="Markdown")
+        await message.answer(status_text)
 
     async def cmd_tools(self, message: types.Message):
         schemas = await PluginManager.get_all_schemas()
@@ -161,15 +151,7 @@ class SunflowerBot:
         except Exception as e:
             await message.answer(f"❌ Skill Error: {str(e)}")
 
-    async def cmd_verbose(self, message: types.Message):
-        user_id = message.from_user.id
-        if user_id not in self.session_configs:
-            self.session_configs[user_id] = {"verbose": False, "think": "off"}
-            
-        current = self.session_configs[user_id]["verbose"]
-        self.session_configs[user_id]["verbose"] = not current
-        new_state = "ON" if not current else "OFF"
-        await message.answer(f"🔍 Verbose Mode is now *{new_state}*.", parse_mode="Markdown")
+        await message.answer(f"Verbose Mode is now {new_state}.")
 
     async def cmd_think(self, message: types.Message):
         user_id = message.from_user.id
@@ -187,7 +169,7 @@ class SunflowerBot:
             return
             
         self.session_configs[user_id]["think"] = level
-        await message.answer(f"💭 Thinking Level set to: *{level.upper()}*", parse_mode="Markdown")
+        await message.answer(f"Thinking Level set to: {level.upper()}")
 
     async def cmd_mcp(self, message: types.Message):
         parts = message.text.split(maxsplit=2)
@@ -229,75 +211,72 @@ class SunflowerBot:
         await self.dp.stop_polling()
 
     async def cmd_tasks(self, message: types.Message):
+        """Lists active background tasks."""
         try:
-            user_id = message.from_user.id
-            tasks = await self.hq.get_active_tasks(user_id)
-            
+            tasks = await self.hq.get_active_tasks(message.from_user.id)
             if not tasks:
-                await message.answer("No active background tasks for you.")
+                await message.answer("No active background tasks.")
                 return
-                
-            text = "*Active High-Command Missions*\n\n"
-            for t in tasks:
-                status_emoji = "⏳" if t['status'] == 'queued' else "⚙️"
-                text += f"{status_emoji} *T-{t['id']}*: {t['goal'][:50]}...\n   Status: `{t['status'].upper()}`\n\n"
             
-            await message.answer(text, parse_mode="Markdown")
+            lines = ["Current Sunflower Missions:"]
+            for t in tasks:
+                icon = "⏳" if t['status'] == 'queued' else "⚙️"
+                lines.append(f"{icon} Task #{t['id']}: {t['goal'][:60]}... (Status: {t['status'].upper()})")
+            
+            await message.answer("\n\n".join(lines))
         except Exception as e:
-            print(f"cmd_tasks error: {e}")
-            await message.answer(f"Error fetching tasks: {str(e)[:200]}")
+            await message.answer(f"System Error (tasks): {str(e)}")
 
     async def cmd_delegate(self, message: types.Message):
+        """Hands a goal to the High-Command department."""
         try:
-            user_id = message.from_user.id
             parts = message.text.split(maxsplit=1)
             if len(parts) < 2:
-                await message.answer("Usage: /delegate <major goal>")
+                await message.answer("Usage: /delegate <your goal>")
                 return
                 
-            goal = parts[1]
-            task_id = await self.hq.create_task(goal, user_id)
+            task_id = await self.hq.create_task(parts[1], message.from_user.id)
             self.scheduler.trigger_update()
-            await message.answer(f"Task #{task_id} Delegated\nThe background High-Command worker has received your goal and will start planning shortly.")
+            await message.answer(f"Task #{task_id} successfully delegated to High-Command. The worker pool will start planning shortly.")
         except Exception as e:
-            print(f"cmd_delegate error: {e}")
-            await message.answer(f"Error delegating task: {str(e)[:200]}")
+            await message.answer(f"System Error (delegate): {str(e)}")
 
     async def cmd_timezone(self, message: types.Message):
+        """Sets the user's home timezone for scheduling."""
         try:
             parts = message.text.split()
             if len(parts) < 2:
-                await message.answer("Timezone Selection\n\nPlease specify your timezone (e.g., America/Chicago, Asia/Tokyo).\n\nUsage: /timezone America/Chicago")
+                await message.answer("Usage: /timezone America/Chicago")
                 return
             
             tz = parts[1]
             await self.hq.set_user_setting(message.from_user.id, "timezone", tz)
-            await message.answer(f"Timezone Saved: {tz}\nSunflower will now use this for all your scheduled tasks.")
+            await message.answer(f"Timezone locked: {tz}")
         except Exception as e:
-            print(f"cmd_timezone error: {e}")
-            await message.answer(f"Error setting timezone: {str(e)[:200]}")
+            await message.answer(f"System Error (timezone): {str(e)}")
 
     async def cmd_schedule(self, message: types.Message):
+        """Schedules a recurring mission."""
         try:
             parts = message.text.split(maxsplit=2)
             if len(parts) < 3:
-                await message.answer("Schedule a Recurring Mission\n\nUsage: /schedule <frequency> <goal>\nExample: /schedule daily Scrape 500 sites in AI niche")
+                await message.answer("Usage: /schedule <daily|weekly> <goal>")
                 return
             
-            frequency = parts[1].lower()
-            goal = parts[2]
+            freq, goal = parts[1].lower(), parts[2]
             import datetime
-            next_run = datetime.datetime.now() + datetime.timedelta(days=1)
-            next_run = next_run.replace(hour=9, minute=0, second=0, microsecond=0)
+            # Default to 9 AM local time tomorrow
+            run_at = datetime.datetime.now() + datetime.timedelta(days=1)
+            run_at = run_at.replace(hour=9, minute=0, second=0, microsecond=0)
             
-            await self.hq.add_schedule(message.from_user.id, goal, frequency, next_run)
+            await self.hq.add_schedule(message.from_user.id, goal, freq, run_at)
             self.scheduler.trigger_update()
-            await message.answer(f"Recurring Mission Scheduled\nGoal: {goal}\nFrequency: {frequency}\nNext run: {next_run} (Server Time)")
+            await message.answer(f"Mission scheduled: '{goal}' every {freq}. Next run scheduled (Server Time): {run_at}")
         except Exception as e:
-            print(f"cmd_schedule error: {e}")
-            await message.answer(f"Error scheduling mission: {str(e)[:200]}")
+            await message.answer(f"System Error (schedule): {str(e)}")
 
     async def cmd_review(self, message: types.Message):
+        """Retrieves CEO Audit results for a specific task."""
         try:
             parts = message.text.split()
             if len(parts) < 2:
@@ -305,21 +284,25 @@ class SunflowerBot:
                 return
             
             task_id = int(parts[1])
-            details = await self.hq.get_task_details(task_id)
-            if not details:
-                await message.answer("Task not found.")
+            t = await self.hq.get_task_details(task_id)
+            if not t:
+                await message.answer("Task ID not found.")
                 return
             
-            text = f"CEO Audit Review: Task #{task_id}\n"
-            text += f"Goal: {details['goal']}\n"
-            text += f"Quality Score: {details.get('quality_score', 'N/A')}/10\n"
-            text += f"Feedback: {details.get('feedback', 'No feedback provided.')}\n\n"
-            text += f"Report Path: {details.get('report_path', 'N/A')}"
+            score = t.get('quality_score', 'Pending')
+            fb = t.get('feedback', 'No feedback recorded.')
+            report = t.get('report_path', 'No report generated.')
             
-            await message.answer(text)
+            resp = [
+                f"CEO Audit for Task #{task_id}",
+                f"Goal: {t['goal']}",
+                f"Quality Score: {score}/10",
+                f"CEO Feedback: {fb}",
+                f"Report Location: {report}"
+            ]
+            await message.answer("\n\n".join(resp))
         except Exception as e:
-            print(f"cmd_review error: {e}")
-            await message.answer(f"Error reviewing task: {str(e)[:200]}")
+            await message.answer(f"System Error (review): {str(e)}")
 
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
@@ -365,7 +348,7 @@ class SunflowerBot:
         # but good practice to ensure consistency if we add caching later.
         self.llm.config = self.config 
 
-        await callback.message.edit_text(f"✅ Model changed to: `{model_id}`\n\nThis is now my default brain.", parse_mode="Markdown")
+        await callback.message.edit_text(f"Model changed to: {model_id}\n\nThis is now my default brain.")
         await callback.answer()
 
     async def handle_message(self, message: types.Message):
@@ -394,7 +377,7 @@ class SunflowerBot:
             injected_history.insert(0, system_msg)
 
         if user_cfg["verbose"]:
-            await message.answer("⚙️ *Verbose:* Compiling context and sending to OpenRouter...", parse_mode="Markdown")
+            await message.answer("Context compiled. Sending to OpenRouter...")
 
         # Get response
         await self.bot.send_chat_action(user_id, "typing")

@@ -148,20 +148,17 @@ class HighCommandWorker:
 
         if passed:
             await self.hq.update_task_status(task_id, "complete")
-            await self.bot.send_message(user_id, f"✅ *Task #{task_id} Approved by CEO*\nDepartment: {dept['name']}\nReport: `{report_path}`", parse_mode="Markdown")
+            await self.bot.send_message(user_id, f"Approved by CEO: Task #{task_id}\nDepartment: {dept['name']}\nReport: {report_path}")
         else:
             # Auto-redo once logic
             redo_count = task.get('redo_count', 0) or 0
             if redo_count < 1:
-                # Increment redo_count and re-queue
-                async with __import__('aiosqlite').connect(self.hq.db_path) as db:
-                    await db.execute("UPDATE tasks SET redo_count = redo_count + 1 WHERE id = ?", (task_id,))
-                    await db.commit()
+                await self.hq.increment_redo_count(task_id)
                 await self.hq.update_task_status(task_id, "queued")
-                await self.bot.send_message(user_id, f"⚠️ *Task #{task_id} Rejected by CEO (Slop Test)*\nSending back for internal correction (Redo #1).", parse_mode="Markdown")
+                await self.bot.send_message(user_id, f"Task #{task_id} rejected by CEO slop test. Sending back for redo #1.")
             else:
                 await self.hq.update_task_status(task_id, "failed")
-                await self.bot.send_message(user_id, f"❌ *Task #{task_id} Failed Review Twice*\nPlease check the logs and intervene.", parse_mode="Markdown")
+                await self.bot.send_message(user_id, f"Task #{task_id} failed CEO review twice. Intervene needed.")
 
     async def generate_plan(self, goal: str, dept: dict = None) -> str:
         """Use the LLM to generate a structured markdown plan."""

@@ -9,27 +9,18 @@ class HqManager:
         self.db_path = db_path
         
     async def initialize(self):
-        """Create the High-Command ledger tables if they don't exist."""
+        """Create the High-Command ledger tables if they don't exist and run migrations."""
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         async with aiosqlite.connect(self.db_path) as db:
+            # 1. Base Tables (Core Schema)
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     goal TEXT NOT NULL,
-                    status TEXT NOT NULL, -- queued, planning, executing, pending_review, complete, failed
+                    status TEXT NOT NULL,
                     user_id INTEGER NOT NULL,
-                    persona_id TEXT DEFAULT 'general',
-                    department_id TEXT DEFAULT 'general',
-                    parent_id INTEGER, -- For intern/sub-tasks
-                    plan_path TEXT,
-                    report_path TEXT,
-                    quality_score REAL,
-                    feedback TEXT,
-                    redo_count INTEGER DEFAULT 0,
-                    wake_up_at TIMESTAMP, -- For non-blocking wait
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (parent_id) REFERENCES tasks(id)
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             await db.execute("""
@@ -55,12 +46,41 @@ class HqManager:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER NOT NULL,
                     goal TEXT NOT NULL,
-                    frequency TEXT NOT NULL, -- daily, weekly, etc.
+                    frequency TEXT NOT NULL,
                     next_run_at TIMESTAMP NOT NULL,
                     is_active INTEGER DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            await db.commit()
+
+        # 2. Migration: Add columns if they are missing from v4.0 -> v4.2
+        await self._migrate()
+
+    async def _migrate(self):
+        """Surgically update the schema without losing data."""
+        async with aiosqlite.connect(self.db_path) as db:
+            # Get existing columns in tasks table
+            async with db.execute("PRAGMA table_info(tasks)") as cursor:
+                columns = [row[1] for row in await cursor.fetchall()]
+            
+            migrations = [
+                ("persona_id", "TEXT DEFAULT 'general'"),
+                ("department_id", "TEXT DEFAULT 'general'"),
+                ("parent_id", "INTEGER"),
+                ("plan_path", "TEXT"),
+                ("report_path", "TEXT"),
+                ("quality_score", "REAL"),
+                ("feedback", "TEXT"),
+                ("redo_count", "INTEGER DEFAULT 0"),
+                ("wake_up_at", "TIMESTAMP")
+            ]
+            
+            for col_name, col_type in migrations:
+                if col_name not in columns:
+                    print(f"📦 DB Migration: Adding column '{col_name}' to tasks table...")
+                    await db.execute(f"ALTER TABLE tasks ADD COLUMN {col_name} {col_type}")
+            
             await db.commit()
 
     async def create_task(self, goal: str, user_id: int, persona_id: str = "general", parent_id: int = None, department_id: str = "general") -> int:
@@ -159,3 +179,9 @@ class HqManager:
             res = dict(task)
             res['logs'] = [dict(l) for l in logs]
             return res
+
+    async def increment_redo_count(self, task_id: int):
+        """Standardized way to track redo attempts."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("UPDATE tasks SET redo_count = redo_count + 1 WHERE id = ?", (task_id,))
+            await db.commit()
