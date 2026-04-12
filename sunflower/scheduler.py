@@ -38,9 +38,6 @@ class MasterScheduler:
 
             # 2. Check for the single most urgent task (queued or waiting to wake up)
             # We look for the smallest wait_up_at OR the oldest queued task
-            async with self.hq as hq_conn: # Placeholder for a more efficient 'next task' query
-                pass 
-            
             # For simplicity in v4.1, we poll every 10 seconds for the 'next task' 
             # while we wait for the interrupt event.
             try:

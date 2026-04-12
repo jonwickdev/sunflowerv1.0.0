@@ -423,6 +423,9 @@ class SunflowerBot:
             BotCommand(command="usage", description="Controls the per-response usage footer"),
             BotCommand(command="tts", description="Controls Text-to-Speech"),
             BotCommand(command="restart", description="Restarts the bot gateway"),
+            BotCommand(command="timezone", description="Set your local timezone"),
+            BotCommand(command="schedule", description="Schedule a recurring mission"),
+            BotCommand(command="review", description="Review a mission's quality audit"),
             BotCommand(command="activation", description="Sets group activation mode"),
             BotCommand(command="send", description="Sets send policy"),
             BotCommand(command="bash", description="Runs a host shell command")
