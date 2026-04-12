@@ -16,9 +16,12 @@ def main():
         bot = SunflowerBot()
         asyncio.run(bot.run())
     except ValueError as e:
-        print(f"\n[Error] {e}")
-    except KeyboardInterrupt:
-        print("\n🌻 Sunflower is shutting down. Goodbye!")
+        print(f"\n[Configuration Error] {e}")
+    except Exception as e:
+        if "Unauthorized" in str(e):
+            print("\n❌ FATAL: Your Telegram Bot Token is invalid. Please check @BotFather and re-run onboarding.")
+        else:
+            print(f"\n[System Error] {e}")
 
 if __name__ == "__main__":
     main()

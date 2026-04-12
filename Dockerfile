@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for Playwright and Chromium
+# Install system dependencies for Playwright, Chromium, and Node (for MCP)
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y \
     libpango-1.0-0 \
     libcairo2 \
     libasound2 \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies
