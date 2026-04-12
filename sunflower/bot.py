@@ -501,7 +501,20 @@ class SunflowerBot:
         await callback.answer()
 
     async def handle_message(self, message: types.Message):
+        """Unified entry point for AI chatter and tool-calling."""
         user_id = message.from_user.id
+        text = message.text.strip()
+        
+        # 0. Check for Mission Resume commands
+        if text.lower() in ["resume", "continue", "resume mission"]:
+            from sunflower.browser_manager import BrowserManager
+            bm = BrowserManager(self.config)
+            res = await bm.resume_session(user_id)
+            if "error" not in res:
+                await message.answer(res["output"], parse_mode="Markdown")
+                return
+            # If error, just fall through to normal AI chat
+            
         try:
             if user_id not in self.histories:
                 self.histories[user_id] = []
