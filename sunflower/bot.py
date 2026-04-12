@@ -19,7 +19,10 @@ class ModelStates(StatesGroup):
     waiting_for_provider_models = State()
 
 class SunflowerBot:
+    instance = None # Global access for background tasks
+
     def __init__(self):
+        SunflowerBot.instance = self
         self.config = Config()
         self.config.validate() # Ensure we have keys before starting
         
