@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Install Playwright browser binaries
 RUN playwright install chromium
@@ -32,4 +32,4 @@ RUN playwright install chromium
 COPY . .
 
 # Run the application
-CMD ["python", "-m", "sunflower.main"]
+CMD ["python3", "-m", "sunflower.main"]

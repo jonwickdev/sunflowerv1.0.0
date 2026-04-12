@@ -8,8 +8,8 @@ User=youruser
 # Update this path to where you cloned the repository on the VPS
 WorkingDirectory=/opt/sunflower-v1.0.0
 
-# Point to the python executable in your virtual environment
-ExecStart=/opt/sunflower-v1.0.0/venv/bin/python -m sunflower.main
+# Point to the python executable in your virtual environment (use python3)
+ExecStart=/opt/sunflower-v1.0.0/venv/bin/python3 -m sunflower.main
 
 # Automatically restart the bot if it crashes or the server reboots
 Restart=always
