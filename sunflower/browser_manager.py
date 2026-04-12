@@ -27,12 +27,12 @@ class BrowserManager:
     async def _run_sovereign_session(self, task: str, user_id: int):
         from browser_use import Agent, Browser, BrowserConfig
         from langchain_openai import ChatOpenAI
+        import pyotp
         
-        # 1. Per-User Vault (Sovereignty)
+        # 1. Hardware Initialization
         user_vault = os.path.join(self.base_vault, str(user_id))
         os.makedirs(user_vault, exist_ok=True)
         
-        # 2. Hardware Initialization
         browser_config = BrowserConfig(
             headless=True,
             wss_url="ws://browser:3000", 
@@ -40,27 +40,43 @@ class BrowserManager:
         )
         browser = Browser(config=browser_config)
         
-        # 3. Intelligence Selection
+        # 2. Intelligence Selection
         llm = ChatOpenAI(
             model=self.config.default_model, 
             base_url="https://openrouter.ai/api/v1", 
             api_key=self.config.api_key
         )
         
-        # 4. Credential Bridge (Sign-in and Forget)
-        x_user = self.config.get_path("browser.x_user")
-        x_pass = self.config.get_path("browser.x_pass")
-        
+        # 3. Universal Keyring Detection
         system_extension = (
             "SAFETY RULE: If you see a CAPTCHA or a 'Login' button that won't go away, "
             "immediately STOP and inform the user to use the Visual Rescue Link."
         )
         
-        if "x.com" in task.lower() or "twitter" in task.lower():
-            if x_user and x_pass:
-                system_extension += f" Use these credentials if prompted: User: {x_user} / Pass: {x_pass}."
+        accounts = self.config.get_path("browser.accounts", {})
+        target_platform = None
+        for platform in accounts.keys():
+            if platform.lower() in task.lower():
+                target_platform = platform
+                break
+        
+        if target_platform:
+            creds = accounts[target_platform]
+            u, p = creds.get("user"), creds.get("pass")
+            if u and p:
+                auth_instr = f" Use these {target_platform} credentials if prompted: User: {u} / Pass: {p}."
+                
+                # Check for TOTP/2FA Secret
+                totp_secret = creds.get("totp")
+                if totp_secret:
+                    try:
+                        totp_code = pyotp.TOTP(totp_secret).now()
+                        auth_instr += f" If a 2FA/TOTP code is required, use this code: {totp_code}."
+                    except:
+                        pass
+                system_extension += auth_instr
 
-        # 5. Ignition
+        # 4. Ignition
         agent = Agent(task=task, llm=llm, browser=browser, system_prompt_extension=system_extension)
         
         # 6. Mission Control: Background the pilot
