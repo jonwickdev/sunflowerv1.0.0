@@ -59,6 +59,11 @@ class SunflowerBot:
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
+        self.dp.message(Command("help"))(self.cmd_help)
+        self.dp.message(Command("commands"))(self.cmd_commands)
+        self.dp.message(Command("whoami"))(self.cmd_whoami)
+        self.dp.message(Command("stop"))(self.cmd_stop)
+        self.dp.message(Command("compact"))(self.cmd_compact)
         self.dp.message()(self.handle_message)
 
     async def cmd_start(self, message: types.Message):
@@ -215,8 +220,88 @@ class SunflowerBot:
                 await message.answer(f"❌ MCP config `{name}` not found.", parse_mode="Markdown")
 
     async def cmd_restart(self, message: types.Message):
-        await message.answer("🔄 Restarting bot gateway...\n*(It will be back online in a few seconds)*", parse_mode="Markdown")
+        """Restarts the bot gateway."""
+        await message.answer("🔄 Restarting bot gateway...\n*(It will be back online in a few seconds)*")
         await self.dp.stop_polling()
+
+    async def cmd_help(self, message: types.Message):
+        """Sunflower Manifesto"""
+        help_text = (
+            "🌻 SUNFLOWER GLOBAL HQ\n"
+            "The world is noisy; Sunflower is focused.\n\n"
+            "I am your high-performance autonomous ecosystem. I don't just chat; I plan, delegate, and execute.\n\n"
+            "QUICK START:\n"
+            "• Just talk to me to brainstorm.\n"
+            "• Use /delegate to start a background mission.\n"
+            "• Use /status to check my health.\n"
+            "• Use /commands to see my full power.\n\n"
+            "Built for speed. Optimized for results."
+        )
+        await message.answer(help_text)
+
+    async def cmd_commands(self, message: types.Message):
+        """Shows the generated command catalog."""
+        cmds = [
+            "/start - Wake up the bot",
+            "/new - Reset current session history",
+            "/status - Check model and system health",
+            "/compact - Summarize and archive chat context",
+            "/stop - Abort active chat generation",
+            "/delegate <goal> - Start a background HQ mission",
+            "/tasks - List active background tasks",
+            "/review <id> - Check a mission's quality audit",
+            "/schedule <freq> <goal> - Recurring missions",
+            "/timezone <tz> - Set your local time",
+            "/model - Change the AI brain",
+            "/think <level> - Set reasoning depth",
+            "/verbose - Toggle background logs",
+            "/bash <cmd> - Run a host shell command",
+            "/tools - List available agent capabilities",
+            "/whoami - Show your user identity",
+            "/restart - Reboot the bot gateway"
+        ]
+        await message.answer("Available Slash Commands:\n\n" + "\n".join(cmds))
+
+    async def cmd_whoami(self, message: types.Message):
+        """Simple identification check."""
+        await message.answer(f"Your Telegram ID: {message.from_user.id}")
+
+    async def cmd_stop(self, message: types.Message):
+        """Abort the active chat generation."""
+        stopped = await self.llm.stop_chat(message.from_user.id)
+        if stopped:
+            await message.answer("🛑 Chat generation cancelled.")
+        else:
+            await message.answer("No active chat turn to stop.")
+
+    async def cmd_compact(self, message: types.Message):
+        """Summarize and archive chat context."""
+        user_id = message.from_user.id
+        history = self.histories.get(user_id, [])
+        if not history:
+            await message.answer("History is already empty. Nothing to compact.")
+            return
+
+        await message.answer("📦 Compacting session... generating summary anchor.")
+        
+        # 1. Generate Summary
+        prompt = "Summarize the key decisions and topics from this conversation into several bullet points for a context.md file. Be concise."
+        compaction_history = history + [{"role": "user", "content": prompt}]
+        summary = await self.llm.chat(compaction_history, user_id=user_id)
+        
+        # 2. Write to context.md
+        import os
+        from datetime import datetime
+        context_path = "sunflower/hq/context.md"
+        os.makedirs(os.path.dirname(context_path), exist_ok=True)
+        
+        with open(context_path, "a", encoding="utf-8") as f:
+            f.write(f"\n\n### {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(summary)
+            
+        # 3. Clear History
+        self.histories[user_id] = []
+        await message.answer(f"✅ Context anchored to {context_path}. Session history cleared to prevent bleed.")
 
     async def cmd_tasks(self, message: types.Message):
         """Lists active background tasks."""
@@ -391,10 +476,11 @@ class SunflowerBot:
         await self.bot.send_chat_action(user_id, "typing")
         response_text = await self.llm.chat(injected_history, user_id=user_id)
 
-        # Append assistant message
-        self.histories[user_id].append({"role": "assistant", "content": response_text})
+        # Append assistant message (if not aborted)
+        if "🛑 Mission Aborted" not in response_text:
+            self.histories[user_id].append({"role": "assistant", "content": response_text})
 
-        # Keep history manageable for v1 (last 10 turns)
+        # Keep history manageable (last 10 turns)
         if len(self.histories[user_id]) > 20:
             self.histories[user_id] = self.histories[user_id][-20:]
 
@@ -418,6 +504,11 @@ class SunflowerBot:
             BotCommand(command="review", description="Review a mission quality audit"),
             BotCommand(command="timezone", description="Set your local timezone"),
             BotCommand(command="schedule", description="Schedule a recurring mission"),
+            BotCommand(command="help", description="Show the sunflower manifesto"),
+            BotCommand(command="commands", description="List the command catalog"),
+            BotCommand(command="stop", description="Abort the current chat generation"),
+            BotCommand(command="compact", description="Summarize and archive context"),
+            BotCommand(command="whoami", description="Show your user identity"),
             BotCommand(command="restart", description="Restart the bot gateway"),
         ]
         await self.bot.set_my_commands(commands)
