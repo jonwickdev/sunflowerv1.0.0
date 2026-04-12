@@ -232,6 +232,8 @@ class SunflowerBot:
             # Mask the reporting if it's a secret
             display_val = self.config._mask(val) if self.config._is_secret(path) else val
             await message.answer(f"✅ Set `{path}` to `{display_val}`. Admin Tip: Run `/restart` to apply any deep engine changes.")
+        else:
+            await message.answer("❌ Invalid config action. Use `/config show`, `/config get <path>`, or `/config set <path>=<value>`", parse_mode="Markdown")
 
     async def cmd_restart(self, message: types.Message):
         """Restarts the bot gateway."""
