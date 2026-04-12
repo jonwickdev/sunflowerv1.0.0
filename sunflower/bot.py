@@ -151,6 +151,14 @@ class SunflowerBot:
         except Exception as e:
             await message.answer(f"❌ Skill Error: {str(e)}")
 
+    async def cmd_verbose(self, message: types.Message):
+        user_id = message.from_user.id
+        if user_id not in self.session_configs:
+            self.session_configs[user_id] = {"verbose": False, "think": "off"}
+            
+        current = self.session_configs[user_id]["verbose"]
+        self.session_configs[user_id]["verbose"] = not current
+        new_state = "ON" if not current else "OFF"
         await message.answer(f"Verbose Mode is now {new_state}.")
 
     async def cmd_think(self, message: types.Message):
