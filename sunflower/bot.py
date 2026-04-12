@@ -233,8 +233,10 @@ class SunflowerBot:
 
     async def cmd_restart(self, message: types.Message):
         """Restarts the bot gateway."""
-        await message.answer("🔄 Restarting bot gateway...\n*(It will be back online in a few seconds)*")
-        await self.dp.stop_polling()
+        await message.answer("🔄 Rebooting Sunflower Engine...\n*(I will be back online in ~10 seconds)*")
+        # Exit the process. The Docker 'restart: always' policy will handle the rest.
+        import os
+        os._exit(0)
 
     async def cmd_help(self, message: types.Message):
         """Sunflower Manifesto"""
