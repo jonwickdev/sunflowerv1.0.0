@@ -16,11 +16,12 @@ class HighCommandWorker:
         self.llm = LLMClient(config)
         self.is_running = True
         # The 'Office Desks' - limits how many agents work at once
-        self.semaphore = asyncio.Semaphore(config.get('max_concurrent_workers', 5))
+        self.max_workers = 5
+        self.semaphore = asyncio.Semaphore(self.max_workers)
 
     async def start_loop(self):
         """Main polling loop. Spawns tasks as desks become available."""
-        print(f"🏗️ High-Command Worker Pool active (Max desks: {self.config.get('max_concurrent_workers', 5)})")
+        print(f"🏗️ High-Command Worker Pool active (Max desks: {self.max_workers})")
         await self.hq.initialize()
 
         while self.is_running:
@@ -113,12 +114,9 @@ class HighCommandWorker:
                         result = await PluginManager.execute_tool(name, args, user_id=user_id)
                         
                         # Check for special 'wait_until' signal to free desk
-                        if name == "wait_until" and "Sleeping" in str(result):
-                            # The tool already calculated delay, but we need to tell HQ to wake up later
-                            # For simplicity, we just stop the worker run. 
-                            # The Scheduler or HQ logic handles wake_up_at.
-                            await self.hq.update_task_status(task_id, "queued") # Re-queue to wait
-                            return 
+                        if name == "wait_until" and "DEFERRED" in str(result):
+                            await self.hq.update_task_status(task_id, "queued")
+                            return
 
                         # Update the log file (Cumulative)
                         with open(log_path, "a", encoding="utf-8") as f:
@@ -150,25 +148,27 @@ class HighCommandWorker:
 
         if passed:
             await self.hq.update_task_status(task_id, "complete")
-            await self.bot.send_message(user_id, f"✅ *Task #{task_id} Approved by CEO*\nDepartment: {dept['name']}\n\n{report_path}", parse_mode="Markdown")
+            await self.bot.send_message(user_id, f"✅ *Task #{task_id} Approved by CEO*\nDepartment: {dept['name']}\nReport: `{report_path}`", parse_mode="Markdown")
         else:
             # Auto-redo once logic
-            redo_count = task.get('redo_count', 0)
+            redo_count = task.get('redo_count', 0) or 0
             if redo_count < 1:
+                # Increment redo_count and re-queue
+                async with __import__('aiosqlite').connect(self.hq.db_path) as db:
+                    await db.execute("UPDATE tasks SET redo_count = redo_count + 1 WHERE id = ?", (task_id,))
+                    await db.commit()
                 await self.hq.update_task_status(task_id, "queued")
-                # Increment redo_count in next update or manual query
-                await self.bot.send_message(user_id, f"⚠️ *Task #{task_id} Rejected by CEO (Slop Test)*\nFeedback: Sending back for internal correction (Redo #1).", parse_mode="Markdown")
+                await self.bot.send_message(user_id, f"⚠️ *Task #{task_id} Rejected by CEO (Slop Test)*\nSending back for internal correction (Redo #1).", parse_mode="Markdown")
             else:
                 await self.hq.update_task_status(task_id, "failed")
-                await self.bot.send_message(user_id, f"❌ *Task #{task_id} Failed Review Twice*\nFeedback provided. Please check the logs and intervene.", parse_mode="Markdown")
+                await self.bot.send_message(user_id, f"❌ *Task #{task_id} Failed Review Twice*\nPlease check the logs and intervene.", parse_mode="Markdown")
 
-        # 4. Phase: Finalize
-        await self.hq.update_task_status(task_id, "complete")
-        await self.bot.send_message(user_id, f"✅ *Task #{task_id} Mission Accomplished!*\n\n{report_path}", parse_mode="Markdown")
-
-    async def generate_plan(self, goal: str) -> str:
+    async def generate_plan(self, goal: str, dept: dict = None) -> str:
         """Use the LLM to generate a structured markdown plan."""
-        prompt = f"Create a multi-step plan to achieve this goal: {goal}. Return only the Markdown plan."
+        dept_context = ""
+        if dept:
+            dept_context = f" You are operating as {dept['persona']} in the {dept['name']}. Follow these SOPs: {dept['sop']}"
+        prompt = f"Create a multi-step plan to achieve this goal: {goal}.{dept_context} Return only the Markdown plan."
         response = self.llm.client.chat.completions.create(
             model=self.config.default_model,
             messages=[{"role": "user", "content": prompt}]

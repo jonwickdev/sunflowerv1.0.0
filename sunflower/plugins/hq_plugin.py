@@ -31,13 +31,14 @@ class DelegationPlugin(BasePlugin):
         return f"🚀 Task #{task_id} successfully delegated to High-Command. The background worker is now taking over. The user has been notified."
 
 async def wait_until(target_time: str) -> str:
-    """Pauses execution until a specific time is reached (HH:MM format, 24h).
+    """Calculates delay until a target time. If delay > 5 minutes, defers the task
+    back to the scheduler instead of blocking.
     
     Args:
         target_time (str): The time to wake up (e.g., '05:00', '14:30').
         
     Returns:
-        str: Confirmation message.
+        str: Confirmation message. Contains 'DEFERRED' if the task was sent back to the scheduler.
     """
     import datetime
     import asyncio
@@ -51,9 +52,19 @@ async def wait_until(target_time: str) -> str:
             target += datetime.timedelta(days=1)
             
         delay = (target - now).total_seconds()
-        print(f"[HQ WORKER] Sleeping for {delay} seconds until {target_time}...")
-        await asyncio.sleep(delay)
-        return f"⏰ Wake up! It is now {target_time}."
+        
+        if delay > 300:  # More than 5 minutes -> defer, don't block
+            # Save the wake_up_at time to the database so the scheduler handles it
+            from sunflower.hq_manager import HqManager
+            hq = HqManager()
+            # The worker will check for 'DEFERRED' in the result and free the desk
+            print(f"[HQ WORKER] Deferring task until {target_time} ({delay:.0f}s from now). Freeing desk.")
+            return f"DEFERRED: Task deferred until {target_time}. The scheduler will wake this task at the right time."
+        else:
+            # Short wait (< 5 min) - just sleep in place
+            print(f"[HQ WORKER] Short wait: {delay:.0f}s until {target_time}. Holding desk.")
+            await asyncio.sleep(delay)
+            return f"Wake up! It is now {target_time}."
     except Exception as e:
         return f"Error parsing time: {str(e)}. Use HH:MM format."
 
@@ -64,7 +75,7 @@ class TimeManagementPlugin(BasePlugin):
             "type": "function",
             "function": {
                 "name": "wait_until",
-                "description": "Pauses the worker until a specific time. Use this for scheduled messages, reports, or time-locked tasks.",
+                "description": "Schedules the worker to resume at a specific time. Short waits (under 5 min) hold the desk; longer waits free the desk for other agents.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -136,9 +147,9 @@ class InternPlugin(BasePlugin):
     async def execute(cls, sub_goal: str = "", department: str = "general", task_id: int = 0, user_id: int = 0, **kwargs) -> str:
         from sunflower.hq_manager import HqManager
         hq = HqManager()
-        # We use task_id as the parent_id
+        await hq.initialize()
         new_id = await hq.create_task(goal=sub_goal, user_id=user_id, parent_id=task_id, department_id=department)
-        return f"👶 Intern spawned (Task #{new_id}) to handle: {sub_goal}"
+        return f"Intern spawned (Task #{new_id}) to handle: {sub_goal}"
 
 class SchedulerPlugin(BasePlugin):
     @classmethod
@@ -165,6 +176,7 @@ class SchedulerPlugin(BasePlugin):
         from sunflower.hq_manager import HqManager
         import datetime
         hq = HqManager()
+        await hq.initialize()
         
         now = datetime.datetime.now()
         target = datetime.datetime.strptime(start_time, "%H:%M").replace(
@@ -174,4 +186,4 @@ class SchedulerPlugin(BasePlugin):
             target += datetime.timedelta(days=1)
             
         await hq.add_schedule(user_id, mission_goal, frequency, target)
-        return f"📅 Recurring mission scheduled: '{mission_goal}' every {frequency} starting at {start_time}."
+        return f"Recurring mission scheduled: '{mission_goal}' every {frequency} starting at {start_time}."
