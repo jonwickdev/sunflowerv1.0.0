@@ -12,6 +12,24 @@ class Config:
         
         # Load core settings via the unified path engine
         self.default_model = self.get_path("default_model", "openai/gpt-3.5-turbo")
+        self.browser_api_key = os.getenv("BROWSER_USE_API_KEY")
+
+    async def get_balance(self) -> float:
+        """Fetch current OpenRouter credit balance."""
+        import httpx
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://openrouter.ai/api/v1/credits",
+                    headers={"Authorization": f"Bearer {self.api_key}"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json().get("data", {})
+                    # Balance = Purchased - Usage
+                    return round(data.get("total_credits", 0) - data.get("total_usage", 0), 2)
+        except Exception:
+            pass
+        return 0.0
 
     def _read_config(self):
         if not os.path.exists(self.config_file):

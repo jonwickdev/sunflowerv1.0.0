@@ -105,14 +105,17 @@ class SunflowerBot:
         memory_turns = len(self.histories.get(user_id, [])) // 2
         model = self.config.default_model
         cfg = self.session_configs.get(user_id, {"verbose": False, "think": "off"})
+        balance = await self.config.get_balance()
         
         status_text = (
-            "Sunflower Status\n\n"
-            f"Brain: {model}\n"
-            f"Think Level: {cfg['think'].upper()}\n"
-            f"Verbose Mode: {'ON' if cfg['verbose'] else 'OFF'}\n"
-            f"Conversation History: {memory_turns} turns"
+            "🌻 *Sunflower System Status*\n\n"
+            f"🧠 *Brain:* `{model}`\n"
+            f"💰 *Balance:* `${balance}`\n"
+            f"💭 *Think:* `{cfg['think'].upper()}`\n"
+            f"📢 *Verbose:* `{'ON' if cfg['verbose'] else 'OFF'}`\n"
+            f"📚 *Context:* `{memory_turns} turns`"
         )
+        await message.answer(status_text, parse_mode="Markdown")
         await message.answer(status_text)
 
     async def cmd_tools(self, message: types.Message):
