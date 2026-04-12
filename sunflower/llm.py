@@ -73,7 +73,24 @@ class LLMClient:
                 
         return "❌ Hop limit reached."
 
-    async def get_available_models(self, search_term: str = "") -> list:
+    async def get_providers(self) -> list:
+        """Extract unique provider names from the OpenRouter model list."""
+        import aiohttp
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get("https://openrouter.ai/api/v1/models") as resp:
+                    resp.raise_for_status()
+                    data_json = await resp.json()
+                    models = data_json.get('data', [])
+                    # Provider is the prefix before the /
+                    providers = sorted(list(set(m['id'].split('/')[0] for m in models if '/' in m['id'])))
+                    return providers
+        except Exception as e:
+            print(f"Error fetching providers: {e}")
+            return []
+
+    async def get_available_models(self, search_term: str = "", provider: str = "") -> list:
+        """Fetch models, optionally filtered by provider/term, sorted by newest first."""
         import aiohttp
         try:
             async with aiohttp.ClientSession() as session:
@@ -82,12 +99,18 @@ class LLMClient:
                     data_json = await resp.json()
                     data = data_json.get('data', [])
             
+            # Sort all models by 'created' descending (Newest First)
+            data.sort(key=lambda x: x.get('created', 0), reverse=True)
+
+            if provider:
+                provider = provider.lower()
+                data = [m for m in data if m['id'].startswith(f"{provider}/")]
+
             if search_term:
                 search_term = search_term.lower()
-                filtered = [m for m in data if search_term in m['id'].lower() or search_term in m.get('name', '').lower()]
-                return filtered[:10]
+                data = [m for m in data if search_term in m['id'].lower() or search_term in m.get('name', '').lower()]
             
-            return data[:5]
+            return data[:10] # Return top 10 for the UI
         except Exception as e:
             print(f"Error fetching models: {e}")
             return []

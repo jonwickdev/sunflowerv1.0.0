@@ -17,6 +17,7 @@ from sunflower.scheduler import MasterScheduler
 # States for Model Selection
 class ModelStates(StatesGroup):
     waiting_for_search = State()
+    waiting_for_provider_models = State()
 
 class SunflowerBot:
     def __init__(self):
@@ -56,9 +57,9 @@ class SunflowerBot:
         self.dp.message(Command("timezone"))(self.cmd_timezone)
         self.dp.message(Command("schedule"))(self.cmd_schedule)
         self.dp.message(Command("review"))(self.cmd_review)
-        self.dp.message(Command("restart"))(self.cmd_restart)
-        self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
-        self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
+        self.dp.message(Command("models"))(self.cmd_models)
+        self.dp.callback_query(F.data.startswith("provider_"))(self.process_provider_selection)
+        self.dp.message(Command("config"))(self.cmd_config)
         self.dp.message(Command("help"))(self.cmd_help)
         self.dp.message(Command("commands"))(self.cmd_commands)
         self.dp.message(Command("whoami"))(self.cmd_whoami)
@@ -184,40 +185,36 @@ class SunflowerBot:
         self.session_configs[user_id]["think"] = level
         await message.answer(f"Thinking Level set to: {level.upper()}")
 
-    async def cmd_mcp(self, message: types.Message):
+    async def cmd_config(self, message: types.Message):
+        """Administrative configuration manager."""
         parts = message.text.split(maxsplit=2)
         if len(parts) < 2:
-            await message.answer("Usage: `/mcp show`, `/mcp set <name>=<json>`, `/mcp unset <name>`", parse_mode="Markdown")
+            await message.answer("Usage: `/config show`, `/config get <path>`, `/config set <path>=<value>`", parse_mode="Markdown")
             return
             
         action = parts[1].lower()
         if action == "show":
-            config = self.config.get_mcp_config()
+            conf = self.config.get_safe_config()
             import json
-            await message.answer(f"🔌 *MCP Servers*\n```json\n{json.dumps(config, indent=2)}\n```", parse_mode="Markdown")
+            await message.answer(f"⚙️ *Current Configuration (Masked)*\n```json\n{json.dumps(conf, indent=2)}\n```", parse_mode="Markdown")
+        elif action == "get":
+            if len(parts) < 3:
+                await message.answer("Usage: `/config get <path>`")
+                return
+            path = parts[2]
+            val = self.config.get_path(path)
+            # Mask if secret
+            if self.config._is_secret(path):
+                val = self.config._mask(val)
+            await message.answer(f"Value for `{path}`: `{val}`", parse_mode="Markdown")
         elif action == "set":
             if len(parts) < 3 or "=" not in parts[2]:
-                await message.answer("Usage: `/mcp set <name>=<json>`", parse_mode="Markdown")
+                await message.answer("Usage: `/config set <path>=<value>`")
                 return
-            kw = parts[2].split("=", 1)
-            name = kw[0].strip()
-            val = kw[1].strip()
-            import json
-            try:
-                config_dict = json.loads(val)
-                self.config.set_mcp_config(name, config_dict)
-                await message.answer(f"✅ Saved MCP config for `{name}`. Please run `/restart` to apply.", parse_mode="Markdown")
-            except json.JSONDecodeError as e:
-                await message.answer(f"❌ Invalid JSON format: {str(e)}")
-        elif action == "unset":
-            if len(parts) < 3:
-                await message.answer("Usage: `/mcp unset <name>`", parse_mode="Markdown")
-                return
-            name = parts[2].strip()
-            if self.config.delete_mcp_config(name):
-                await message.answer(f"✅ Removed MCP config for `{name}`. Please run `/restart` to apply.", parse_mode="Markdown")
-            else:
-                await message.answer(f"❌ MCP config `{name}` not found.", parse_mode="Markdown")
+            path, val = parts[2].split("=", 1)
+            path, val = path.strip(), val.strip()
+            self.config.set_path(path, val)
+            await message.answer(f"✅ Set `{path}` to `{val}`. Run `/restart` to apply any engine changes.")
 
     async def cmd_restart(self, message: types.Message):
         """Restarts the bot gateway."""
@@ -397,51 +394,66 @@ class SunflowerBot:
         except Exception as e:
             await message.answer(f"System Error (review): {str(e)}")
 
-    async def cmd_model(self, message: types.Message, state: FSMContext):
-        await state.set_state(ModelStates.waiting_for_search)
-        await message.answer(
-            "Please type part of the model name you are looking for (e.g., `claude`, `gpt-4`, `llama`):",
-            parse_mode="Markdown"
-        )
-
-    async def process_model_search(self, message: types.Message, state: FSMContext):
-        search_term = message.text
-        
-        # If the user typed a command instead of a search term, cancel the search
-        # and let the command handlers process it on the next message
-        if search_term and search_term.startswith("/"):
-            await state.clear()
-            await message.answer("🔄 Model search cancelled. Processing your command...")
-            # Re-dispatch: manually call the right handler
-            # The simplest approach is to just tell the user to re-send
+    async def cmd_models(self, message: types.Message):
+        """Starts the interactive model drill-down."""
+        # Check if user provided an immediate search
+        parts = message.text.split(maxsplit=1)
+        if len(parts) > 1:
+            term = parts[1].strip()
+            models = await self.llm.get_available_models(search_term=term)
+            await self._show_models_list(message, models, f"Search results for '{term}':")
             return
+
+        providers = await self.llm.get_providers()
+        keyboard = []
+        # Group providers into rows of 2
+        for i in range(0, len(providers), 2):
+            row = [InlineKeyboardButton(text=p.capitalize(), callback_data=f"provider_{p}") for p in providers[i:i+2]]
+            keyboard.append(row)
         
-        models = await self.llm.get_available_models(search_term)
-        
+        reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
+        await message.answer("🌐 *Select a Provider*\n(Newest models first)", reply_markup=reply_markup, parse_mode="Markdown")
+
+    async def process_provider_selection(self, callback: types.CallbackQuery, state: FSMContext):
+        provider = callback.data.split("provider_")[1]
+        models = await self.llm.get_available_models(provider=provider)
+        await self._show_models_list(callback.message, models, f"Newest models from {provider.capitalize()}:")
+        await callback.answer()
+
+    async def _show_models_list(self, message, models, title):
         if not models:
-            await message.answer("No models found. Try another search term (or type /new to cancel):")
+            await message.answer("No active models found for this selection.")
             return
 
         keyboard = []
         for m in models:
-            model_id = m['id']
-            # Truncate name if too long for button
-            model_name = m.get('name', model_id)[:30] 
-            keyboard.append([InlineKeyboardButton(text=model_name, callback_data=f"select_model_{model_id}")])
-
+            mid = m['id']
+            name = m.get('name', mid)[:30]
+            keyboard.append([InlineKeyboardButton(text=f"🧠 {name}", callback_data=f"select_model_{mid}")])
+        
         reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-        await message.answer(f"Search results for '{search_term}':", reply_markup=reply_markup)
-        await state.clear() # Exit search state once results are shown
+        await message.answer(title, reply_markup=reply_markup)
+
+    async def cmd_model(self, message: types.Message, state: FSMContext):
+        """Legacy search-only alias"""
+        await state.set_state(ModelStates.waiting_for_search)
+        await message.answer("Type part of a model name to search (e.g. `llama`, `claude`):")
+
+    async def process_model_search(self, message: types.Message, state: FSMContext):
+        term = message.text
+        if term and term.startswith("/"):
+            await state.clear()
+            return
+        
+        models = await self.llm.get_available_models(search_term=term)
+        await self._show_models_list(message, models, f"Results for '{term}':")
+        await state.clear()
 
     async def process_model_selection(self, callback: types.CallbackQuery):
         model_id = callback.data.split("select_model_")[1]
         self.config.save_default_model(model_id)
-        
-        # Update LLM client reference is not strictly needed if config is read on the fly, 
-        # but good practice to ensure consistency if we add caching later.
         self.llm.config = self.config 
-
-        await callback.message.edit_text(f"Model changed to: {model_id}\n\nThis is now my default brain.")
+        await callback.message.edit_text(f"✅ Brain updated: {model_id}\n\nI am now using this model as my default intelligence.")
         await callback.answer()
 
     async def handle_message(self, message: types.Message):
