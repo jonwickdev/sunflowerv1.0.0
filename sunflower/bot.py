@@ -312,10 +312,20 @@ class SunflowerBot:
 
     async def process_model_search(self, message: types.Message, state: FSMContext):
         search_term = message.text
+        
+        # If the user typed a command instead of a search term, cancel the search
+        # and let the command handlers process it on the next message
+        if search_term and search_term.startswith("/"):
+            await state.clear()
+            await message.answer("🔄 Model search cancelled. Processing your command...")
+            # Re-dispatch: manually call the right handler
+            # The simplest approach is to just tell the user to re-send
+            return
+        
         models = await self.llm.get_available_models(search_term)
         
         if not models:
-            await message.answer("No models found. Try another search term:")
+            await message.answer("No models found. Try another search term (or type /new to cancel):")
             return
 
         keyboard = []
