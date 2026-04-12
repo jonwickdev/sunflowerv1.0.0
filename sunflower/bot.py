@@ -107,10 +107,10 @@ class SunflowerBot:
         
         status_text = (
             f"📊 *Sunflower Status*\n\n"
-            f"🧠 **Model:** `{model}`\n"
-            f"💭 **Think Level:** `{cfg['think'].upper()}`\n"
-            f"🔍 **Verbose Mode:** `{'ON' if cfg['verbose'] else 'OFF'}`\n"
-            f"📁 **Memory Used:** `{memory_turns}` conversational turns"
+            f"🧠 Model: `{model}`\n"
+            f"💭 Think Level: `{cfg['think'].upper()}`\n"
+            f"🔍 Verbose Mode: `{'ON' if cfg['verbose'] else 'OFF'}`\n"
+            f"📁 Memory Used: `{memory_turns}` conversational turns"
         )
         await message.answer(status_text, parse_mode="Markdown")
 
@@ -169,7 +169,7 @@ class SunflowerBot:
         current = self.session_configs[user_id]["verbose"]
         self.session_configs[user_id]["verbose"] = not current
         new_state = "ON" if not current else "OFF"
-        await message.answer(f"🔍 Verbose Mode is now **{new_state}**.", parse_mode="Markdown")
+        await message.answer(f"🔍 Verbose Mode is now *{new_state}*.", parse_mode="Markdown")
 
     async def cmd_think(self, message: types.Message):
         user_id = message.from_user.id
@@ -187,7 +187,7 @@ class SunflowerBot:
             return
             
         self.session_configs[user_id]["think"] = level
-        await message.answer(f"💭 Thinking Level set to: **{level.upper()}**", parse_mode="Markdown")
+        await message.answer(f"💭 Thinking Level set to: *{level.upper()}*", parse_mode="Markdown")
 
     async def cmd_mcp(self, message: types.Message):
         parts = message.text.split(maxsplit=2)
@@ -239,7 +239,7 @@ class SunflowerBot:
         text = "📊 *Active High-Command Missions*\n\n"
         for t in tasks:
             status_emoji = "⏳" if t['status'] == 'queued' else "⚙️"
-            text += f"{status_emoji} **T-{t['id']}**: {t['goal'][:50]}...\n   Status: `{t['status'].upper()}`\n\n"
+            text += f"{status_emoji} *T-{t['id']}*: {t['goal'][:50]}...\n   Status: `{t['status'].upper()}`\n\n"
         
         await message.answer(text, parse_mode="Markdown")
 
