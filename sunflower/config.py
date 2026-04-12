@@ -12,7 +12,11 @@ class Config:
         
         # Load core settings via the unified path engine
         self.default_model = self.get_path("default_model", "openai/gpt-3.5-turbo")
-        self.browser_api_key = os.getenv("BROWSER_USE_API_KEY")
+        self.browser_api_key = self.get_path("browser.api_key") or os.getenv("BROWSER_USE_API_KEY")
+
+        # Syncing for backward compatibility with existing plugins
+        if not self.browser_api_key:
+            self.browser_api_key = self.get_path("browser_api_key")
 
     async def get_balance(self) -> float:
         """Fetch current OpenRouter credit balance."""

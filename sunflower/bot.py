@@ -216,13 +216,20 @@ class SunflowerBot:
                 val = self.config._mask(val)
             await message.answer(f"Value for `{path}`: `{val}`", parse_mode="Markdown")
         elif action == "set":
-            if len(parts) < 3 or "=" not in parts[2]:
-                await message.answer("Usage: `/config set <path>=<value>`")
+            raw = parts[2]
+            if "=" in raw:
+                path, val = raw.split("=", 1)
+            elif " " in raw:
+                path, val = raw.split(" ", 1)
+            else:
+                await message.answer("Usage: `/config set <path>=<value>` or `/config set <path> <value>`", parse_mode="Markdown")
                 return
-            path, val = parts[2].split("=", 1)
+            
             path, val = path.strip(), val.strip()
             self.config.set_path(path, val)
-            await message.answer(f"✅ Set `{path}` to `{val}`. Run `/restart` to apply any engine changes.")
+            # Mask the reporting if it's a secret
+            display_val = self.config._mask(val) if self.config._is_secret(path) else val
+            await message.answer(f"✅ Set `{path}` to `{display_val}`. Admin Tip: Run `/restart` to apply any deep engine changes.")
 
     async def cmd_restart(self, message: types.Message):
         """Restarts the bot gateway."""
