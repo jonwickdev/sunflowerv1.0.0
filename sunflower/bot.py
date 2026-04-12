@@ -65,6 +65,13 @@ class SunflowerBot:
         self.dp.message(Command("whoami"))(self.cmd_whoami)
         self.dp.message(Command("stop"))(self.cmd_stop)
         self.dp.message(Command("compact"))(self.cmd_compact)
+        self.dp.message(Command("restart"))(self.cmd_restart)
+        
+        # FSM and Callbacks
+        self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
+        self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
+        
+        # Fallback for all other messages
         self.dp.message()(self.handle_message)
 
     async def cmd_start(self, message: types.Message):
@@ -458,45 +465,52 @@ class SunflowerBot:
 
     async def handle_message(self, message: types.Message):
         user_id = message.from_user.id
-        if user_id not in self.histories:
-            self.histories[user_id] = []
-        if user_id not in self.session_configs:
-            self.session_configs[user_id] = {"verbose": False, "think": "off"}
+        try:
+            if user_id not in self.histories:
+                self.histories[user_id] = []
+            if user_id not in self.session_configs:
+                self.session_configs[user_id] = {"verbose": False, "think": "off"}
 
-        user_cfg = self.session_configs[user_id]
+            user_cfg = self.session_configs[user_id]
+            # Append user message
+            self.histories[user_id].append({"role": "user", "content": message.text})
+            
+            # Build injected history for API call
+            injected_history = self.histories[user_id].copy()
+            if user_cfg["think"] != "off":
+                think_instructions = {
+                    "minimal": "Take a brief moment to reason step-by-step before answering.",
+                    "low": "Reason clearly step-by-step in <think> tags before answering.",
+                    "medium": "Reason extensively step-by-step in <think> tags considering alternatives before answering.",
+                    "high": "Perform a massive multi-step logical deduction in <think> tags prior to answering.",
+                    "xhigh": "You are in maximum reasoning mode. Output exhaustive stream-of-consciousness logic in <think> tags. Do not skip any thought."
+                }
+                system_msg = {"role": "system", "content": think_instructions[user_cfg["think"]]}
+                injected_history.insert(0, system_msg)
 
-        # Append user message
-        self.histories[user_id].append({"role": "user", "content": message.text})
-        
-        # Build injected history for API call
-        injected_history = self.histories[user_id].copy()
-        if user_cfg["think"] != "off":
-            think_instructions = {
-                "minimal": "Take a brief moment to reason step-by-step before answering.",
-                "low": "Reason clearly step-by-step in <think> tags before answering.",
-                "medium": "Reason extensively step-by-step in <think> tags considering alternatives before answering.",
-                "high": "Perform a massive multi-step logical deduction in <think> tags prior to answering.",
-                "xhigh": "You are in maximum reasoning mode. Output exhaustive stream-of-consciousness logic in <think> tags. Do not skip any thought."
-            }
-            system_msg = {"role": "system", "content": think_instructions[user_cfg["think"]]}
-            injected_history.insert(0, system_msg)
+            if user_cfg["verbose"]:
+                await message.answer("Context compiled. Sending to OpenRouter...")
 
-        if user_cfg["verbose"]:
-            await message.answer("Context compiled. Sending to OpenRouter...")
+            # Get response
+            await self.bot.send_chat_action(user_id, "typing")
+            response_text = await self.llm.chat(injected_history, user_id=user_id)
 
-        # Get response
-        await self.bot.send_chat_action(user_id, "typing")
-        response_text = await self.llm.chat(injected_history, user_id=user_id)
+            if not response_text:
+                response_text = "⚠️ Brain returned an empty response. Please try again or check `/config`."
 
-        # Append assistant message (if not aborted)
-        if "🛑 Mission Aborted" not in response_text:
-            self.histories[user_id].append({"role": "assistant", "content": response_text})
+            # Append assistant message (if not aborted)
+            if "🛑 Mission Aborted" not in response_text:
+                self.histories[user_id].append({"role": "assistant", "content": response_text})
 
-        # Keep history manageable (last 10 turns)
-        if len(self.histories[user_id]) > 20:
-            self.histories[user_id] = self.histories[user_id][-20:]
+            # Keep history manageable (last 10 turns)
+            if len(self.histories[user_id]) > 20:
+                self.histories[user_id] = self.histories[user_id][-20:]
 
-        await message.answer(response_text)
+            await message.answer(response_text)
+        except Exception as e:
+            import traceback
+            print(f"Chat Error: {traceback.format_exc()}")
+            await message.answer(f"❌ System Error: {str(e)}\n\nCheck logs for details.")
 
     async def _set_bot_commands(self):
         commands = [
