@@ -84,18 +84,17 @@ class BrowserManager:
                 msg = f"📍 *Step {step.number}*: {step.next_goal}\n🌐 *URL*: {step.url}"
                 await bot.send_message(user_id, msg, parse_mode="Markdown")
                 
-                # 2. Visual Storyboard (Take a screenshot if 15s+ passed since last one)
-                current_time = asyncio.get_event_loop().time()
-                if current_time - last_screenshot_at > 15:
-                    try:
-                        # Use the result-provided screenshots or a CDP snap
-                        # For now, we take a direct CDP snapshot for recency
-                        screenshot_resp = await client.sessions.get(session_id)
-                        if getattr(screenshot_resp, 'screenshot_url', None):
-                            await bot.send_photo(user_id, screenshot_resp.screenshot_url, caption=f"📸 Progress View (Step {step.number})")
-                            last_screenshot_at = current_time
-                    except:
-                        pass # Silently skip if screenshot fails
+                # 2. Visual Storyboard (Only if explicitly enabled)
+                if self.config.get_path("browser.snapshots", False):
+                    current_time = asyncio.get_event_loop().time()
+                    if current_time - last_screenshot_at > 20:
+                        try:
+                            screenshot_resp = await client.sessions.get(session_id)
+                            if getattr(screenshot_resp, 'screenshot_url', None):
+                                await bot.send_photo(user_id, screenshot_resp.screenshot_url, caption=f"📸 Progress View (Step {step.number})")
+                                last_screenshot_at = current_time
+                        except:
+                            pass 
             
             # 3. Final Report
             final_report = (
