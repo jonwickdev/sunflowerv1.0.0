@@ -25,6 +25,7 @@ class HqManager:
                     report_path TEXT,
                     quality_score REAL,
                     feedback TEXT,
+                    redo_count INTEGER DEFAULT 0,
                     wake_up_at TIMESTAMP, -- For non-blocking wait
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

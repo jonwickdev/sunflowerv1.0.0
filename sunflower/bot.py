@@ -12,6 +12,7 @@ from sunflower.tools import PluginManager
 from sunflower.mcp_manager import McpManager
 from sunflower.hq_manager import HqManager
 from sunflower.worker import HighCommandWorker
+from sunflower.scheduler import MasterScheduler
 
 # States for Model Selection
 class ModelStates(StatesGroup):
@@ -27,6 +28,7 @@ class SunflowerBot:
         self.llm = LLMClient(self.config)
         self.hq = HqManager()
         self.worker = HighCommandWorker(self.config, self.hq, self.bot)
+        self.scheduler = MasterScheduler()
         
         self.histories = {}
         # Per-user routing configs (e.g. verbose, think mode)
@@ -51,6 +53,9 @@ class SunflowerBot:
         self.dp.message(Command("mcp"))(self.cmd_mcp)
         self.dp.message(Command("tasks"))(self.cmd_tasks)
         self.dp.message(Command("delegate"))(self.cmd_delegate)
+        self.dp.message(Command("timezone"))(self.cmd_timezone)
+        self.dp.message(Command("schedule"))(self.cmd_schedule)
+        self.dp.message(Command("review"))(self.cmd_review)
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -247,7 +252,56 @@ class SunflowerBot:
             
         goal = parts[1]
         task_id = await self.hq.create_task(goal, user_id)
+        self.scheduler.trigger_update() # Wake up scheduler to see if we should start now
         await message.answer(f"🚀 *Task #{task_id} Delegated*\nThe background High-Command worker has received your goal and will start planning shortly.", parse_mode="Markdown")
+
+    async def cmd_timezone(self, message: types.Message):
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("🌍 *Timezone Selection*\n\nPlease specify your timezone (e.g., `America/Chicago`, `Asia/Tokyo`).\n\nUsage: `/timezone America/Chicago`", parse_mode="Markdown")
+            return
+        
+        tz = parts[1]
+        # Basic validation with pytz could be added here
+        await self.hq.set_user_setting(message.from_user.id, "timezone", tz)
+        await message.answer(f"✅ *Timezone Saved*: `{tz}`\nSunflower will now use this for all your scheduled tasks.", parse_mode="Markdown")
+
+    async def cmd_schedule(self, message: types.Message):
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3:
+            await message.answer("📅 *Schedule a Recurring Mission*\n\nUsage: `/schedule <frequency> <goal>`\nExample: `/schedule daily Scrape 500 sites in AI niche`", parse_mode="Markdown")
+            return
+        
+        frequency = parts[1].lower()
+        goal = parts[2]
+        import datetime
+        # Default to 9:00 AM next day for now
+        next_run = datetime.datetime.now() + datetime.timedelta(days=1)
+        next_run = next_run.replace(hour=9, minute=0, second=0, microsecond=0)
+        
+        await self.hq.add_schedule(message.from_user.id, goal, frequency, next_run)
+        self.scheduler.trigger_update()
+        await message.answer(f"✅ *Recurring Mission Scheduled*\nGoal: {goal}\nFrequency: `{frequency}`\nNext run: {next_run} (Server Time)", parse_mode="Markdown")
+
+    async def cmd_review(self, message: types.Message):
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("Usage: `/review <task_id>`")
+            return
+        
+        task_id = int(parts[1])
+        details = await self.hq.get_task_details(task_id)
+        if not details:
+            await message.answer("Task not found.")
+            return
+        
+        text = f"🕵️ *CEO Audit Review: Task #{task_id}*\n"
+        text += f"Goal: {details['goal']}\n"
+        text += f"Quality Score: `{details.get('quality_score', 'N/A')}/10`\n"
+        text += f"Feedback: {details.get('feedback', 'No feedback provided.')}\n\n"
+        text += f"Report Path: `{details['report_path']}`"
+        
+        await message.answer(text, parse_mode="Markdown")
 
     async def cmd_model(self, message: types.Message, state: FSMContext):
         await state.set_state(ModelStates.waiting_for_search)
@@ -379,8 +433,9 @@ class SunflowerBot:
         print("🌻 Sunflower is starting...")
         try:
             await self.hq.initialize()
-            # Start the background worker
+            # Start the background worker pool and the master scheduler
             asyncio.create_task(self.worker.start_loop())
+            asyncio.create_task(self.scheduler.run(self.bot))
             
             await McpManager.start_all(self.config)
             await self._set_bot_commands()

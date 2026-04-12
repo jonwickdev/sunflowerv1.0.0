@@ -85,7 +85,6 @@ class HighCommandWorker:
             {"role": "user", "content": f"Begin mission."}
         ]
         
-        # We allow a much higher limit for High-Command (500 steps instead of chat's 7)
         MAX_STEPS = 500 
         for step in range(MAX_STEPS):
             try:
@@ -106,17 +105,25 @@ class HighCommandWorker:
                         name = tool_call.function.name
                         args = json.loads(tool_call.function.arguments)
                         
+                        # Add task context to tools
+                        args['task_id'] = task_id
+                        args['user_id'] = user_id
+                        
                         await self.hq.log_action(task_id, f"Invoking Tool: {name}", f"Args: {args}")
                         result = await PluginManager.execute_tool(name, args, user_id=user_id)
                         
+                        # Check for special 'wait_until' signal to free desk
+                        if name == "wait_until" and "Sleeping" in str(result):
+                            # The tool already calculated delay, but we need to tell HQ to wake up later
+                            # For simplicity, we just stop the worker run. 
+                            # The Scheduler or HQ logic handles wake_up_at.
+                            await self.hq.update_task_status(task_id, "queued") # Re-queue to wait
+                            return 
+
                         # Update the log file (Cumulative)
                         with open(log_path, "a", encoding="utf-8") as f:
                             f.write(f"\n## Step {step+1}: {name}\nArgs: {args}\nResult: {result}\n")
                         
-                        # Intermediate Save: Also update the report with current progress
-                        with open(report_path, "w", encoding="utf-8") as f:
-                            f.write(f"# High-Command Production Report: Task #{task_id}\n*Last Update: {datetime.datetime.now()}*\n\n## Progress Log\nCurrently at step {step+1}. The work is persisting on disk.\n\n## Current Findings\n{msg.content or 'Processing tools...'}")
-
                         history.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -124,18 +131,36 @@ class HighCommandWorker:
                             "content": str(result)
                         })
                 else:
-                    # Final text response from the agent
+                    # Final text response from the agent (The Submission)
                     final_report = msg.content
                     with open(report_path, "w", encoding="utf-8") as f:
-                        f.write(f"# Final Report - Task #{task_id}\n\n{final_report}")
+                        f.write(f"# Department Report: {dept['name']}\nGoal: {goal}\n\n{final_report}")
                     break
                     
-                # Periodic heartbeats to user every 5 steps
                 if step % 5 == 0 and step > 0:
-                    await self.bot.send_message(user_id, f"💓 *Task #{task_id} Heartbeat*: Completed step {step}. I have {len(history)} messages of context. Still grinding...", parse_mode="Markdown")
+                    await self.bot.send_message(user_id, f"💓 *Task #{task_id} Heartbeat*: Step {step} complete ({dept['name']}).", parse_mode="Markdown")
             except Exception as e:
                 await self.hq.log_action(task_id, f"Error at step {step}", str(e))
-                await asyncio.sleep(5) # Brief cooldown on error
+                await asyncio.sleep(5)
+
+        # 4. Phase: CEO Review (The Auditor)
+        from sunflower.auditor import AntiSlopAuditor
+        auditor = AntiSlopAuditor(self.config, self.hq)
+        passed = await auditor.review_task(task)
+
+        if passed:
+            await self.hq.update_task_status(task_id, "complete")
+            await self.bot.send_message(user_id, f"✅ *Task #{task_id} Approved by CEO*\nDepartment: {dept['name']}\n\n{report_path}", parse_mode="Markdown")
+        else:
+            # Auto-redo once logic
+            redo_count = task.get('redo_count', 0)
+            if redo_count < 1:
+                await self.hq.update_task_status(task_id, "queued")
+                # Increment redo_count in next update or manual query
+                await self.bot.send_message(user_id, f"⚠️ *Task #{task_id} Rejected by CEO (Slop Test)*\nFeedback: Sending back for internal correction (Redo #1).", parse_mode="Markdown")
+            else:
+                await self.hq.update_task_status(task_id, "failed")
+                await self.bot.send_message(user_id, f"❌ *Task #{task_id} Failed Review Twice*\nFeedback provided. Please check the logs and intervene.", parse_mode="Markdown")
 
         # 4. Phase: Finalize
         await self.hq.update_task_status(task_id, "complete")
