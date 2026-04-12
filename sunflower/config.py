@@ -100,6 +100,20 @@ class Config:
     def save_default_model(self, model_id):
         self.set_path("default_model", model_id)
 
+    def get_mcp_config(self):
+        return self.get_path("mcp_servers", {})
+        
+    def set_mcp_config(self, name, config_dict):
+        self.set_path(f"mcp_servers.{name}", config_dict)
+        
+    def delete_mcp_config(self, name):
+        data = self._read_config()
+        if "mcp_servers" in data and name in data["mcp_servers"]:
+            del data["mcp_servers"][name]
+            self._write_config(data)
+            return True
+        return False
+
     def validate(self):
         missing = []
         if not self.api_key: missing.append("OPENROUTER_API_KEY")
