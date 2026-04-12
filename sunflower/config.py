@@ -21,14 +21,15 @@ class Config:
             async with httpx.AsyncClient() as client:
                 resp = await client.get(
                     "https://openrouter.ai/api/v1/credits",
-                    headers={"Authorization": f"Bearer {self.api_key}"}
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    timeout=10.0
                 )
-                if resp.status_code == 200:
+                if resp.status_code == 200 and "application/json" in resp.headers.get("content-type", ""):
                     data = resp.json().get("data", {})
                     # Balance = Purchased - Usage
                     return round(data.get("total_credits", 0) - data.get("total_usage", 0), 2)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Balance Error] {str(e)}")
         return 0.0
 
     def _read_config(self):

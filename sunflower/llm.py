@@ -55,9 +55,18 @@ class LLMClient:
                 for tool_call in msg.tool_calls:
                     name = tool_call.function.name
                     try:
-                        args = json.loads(tool_call.function.arguments)
+                        import json
+                        # Clean the arguments string in case of Markdown or extra whitespace
+                        arg_str = tool_call.function.arguments.strip()
+                        if arg_str.startswith("```json"): arg_str = arg_str[7:].rstrip("`").strip()
+                        elif arg_str.startswith("```"): arg_str = arg_str[3:].rstrip("`").strip()
+                        
+                        args = json.loads(arg_str)
                         print(f"[PLUGIN] Executing: {name}")
                         result = await PluginManager.execute_tool(name, args, user_id=user_id)
+                    except json.JSONDecodeError as je:
+                        print(f"[LLM Error] Malformed tool arguments: {tool_call.function.arguments[:200]}...")
+                        result = f"Error: The AI sent malformed tool instructions. (Details: {str(je)})"
                     except Exception as e:
                         result = f"Error: {str(e)}"
                         
