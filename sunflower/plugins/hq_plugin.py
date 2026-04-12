@@ -112,3 +112,66 @@ class MessengerPlugin(BasePlugin):
         except Exception as e:
             await bot.session.close()
             return f"❌ Failed to send message: {str(e)}"
+
+class InternPlugin(BasePlugin):
+    @classmethod
+    def get_tool_schema(cls) -> dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": "spawn_intern",
+                "description": "Delegates a sub-task to an 'Intern'. Use this to parallelize work (e.g., scrape one site out of 50).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "sub_goal": {"type": "string", "description": "The specific task for the intern."},
+                        "department": {"type": "string", "description": "The department the intern belongs to (research, marketing, cto)."}
+                    },
+                    "required": ["sub_goal"]
+                }
+            }
+        }
+
+    @classmethod
+    async def execute(cls, sub_goal: str = "", department: str = "general", task_id: int = 0, user_id: int = 0, **kwargs) -> str:
+        from sunflower.hq_manager import HqManager
+        hq = HqManager()
+        # We use task_id as the parent_id
+        new_id = await hq.create_task(goal=sub_goal, user_id=user_id, parent_id=task_id, department_id=department)
+        return f"👶 Intern spawned (Task #{new_id}) to handle: {sub_goal}"
+
+class SchedulerPlugin(BasePlugin):
+    @classmethod
+    def get_tool_schema(cls) -> dict:
+        return {
+            "type": "function",
+            "function": {
+                "name": "schedule_recurring_task",
+                "description": "Sets up a recurring mission (daily, weekly) for the future.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "mission_goal": {"type": "string", "description": "The goal of the task."},
+                        "frequency": {"type": "string", "enum": ["daily", "weekly", "monthly"], "description": "How often to run."},
+                        "start_time": {"type": "string", "description": "When to first run (HH:MM format, 24h)."}
+                    },
+                    "required": ["mission_goal", "frequency", "start_time"]
+                }
+            }
+        }
+
+    @classmethod
+    async def execute(cls, mission_goal: str = "", frequency: str = "daily", start_time: str = "", user_id: int = 0, **kwargs) -> str:
+        from sunflower.hq_manager import HqManager
+        import datetime
+        hq = HqManager()
+        
+        now = datetime.datetime.now()
+        target = datetime.datetime.strptime(start_time, "%H:%M").replace(
+            year=now.year, month=now.month, day=now.day
+        )
+        if target < now:
+            target += datetime.timedelta(days=1)
+            
+        await hq.add_schedule(user_id, mission_goal, frequency, target)
+        return f"📅 Recurring mission scheduled: '{mission_goal}' every {frequency} starting at {start_time}."

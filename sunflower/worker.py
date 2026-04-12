@@ -15,20 +15,30 @@ class HighCommandWorker:
         self.bot = bot
         self.llm = LLMClient(config)
         self.is_running = True
+        # The 'Office Desks' - limits how many agents work at once
+        self.semaphore = asyncio.Semaphore(config.get('max_concurrent_workers', 5))
 
     async def start_loop(self):
-        """Main polling loop for the background worker."""
-        print("🏗️ High-Command Worker is active and polling for missions...")
+        """Main polling loop. Spawns tasks as desks become available."""
+        print(f"🏗️ High-Command Worker Pool active (Max desks: {self.config.get('max_concurrent_workers', 5)})")
+        await self.hq.initialize()
+
         while self.is_running:
             try:
                 task = await self.hq.get_queued_task()
                 if task:
-                    await self.process_task(task)
-                else:
-                    await asyncio.sleep(5) # Poll every 5 seconds
+                    # Fire and forget - the semaphore inside handled the 'desk' limit
+                    asyncio.create_task(self.run_task_with_semaphore(task))
+                
+                await asyncio.sleep(2) # Frequent shallow poll
             except Exception as e:
-                print(f"❌ Worker Loop Error: {e}")
-                await asyncio.sleep(10)
+                print(f"❌ Worker Pool Error: {e}")
+                await asyncio.sleep(5)
+
+    async def run_task_with_semaphore(self, task: dict):
+        """Attempts to seat an agent at a desk."""
+        async with self.semaphore:
+            await self.process_task(task)
 
     async def process_task(self, task: dict):
         """Execute a mission using the Plan-Action-Report protocol."""
@@ -46,29 +56,33 @@ class HighCommandWorker:
         await self.bot.send_message(user_id, f"🏗️ *High-Command Task #{task_id} Started*\nGoal: {goal}", parse_mode="Markdown")
 
         # 2. Phase: Planning
-        await self.hq.log_action(task_id, "Planning Phase Start")
-        plan_content = await self.generate_plan(goal)
-        with open(plan_path, "w") as f:
+        from sunflower.departments import DEPARTMENTS
+        dept = DEPARTMENTS.get(task.get('department_id', 'general'), DEPARTMENTS['general'])
+        
+        await self.hq.log_action(task_id, f"Planning Phase Start | Dept: {dept['name']}")
+        plan_content = await self.generate_plan(goal, dept)
+        with open(plan_path, "w", encoding="utf-8") as f:
             f.write(plan_content)
         
         await self.hq.update_task_status(task_id, "executing")
-        await self.bot.send_message(user_id, f"📋 *Task #{task_id} Plan Generated*\nDetails: `{plan_path}`\n\nStarting execution...", parse_mode="Markdown")
+        await self.bot.send_message(user_id, f"📋 *Task #{task_id} Plan Generated* ({dept['name']})\nDetails: `{plan_path}`\n\nStarting execution...", parse_mode="Markdown")
 
         # 3. Phase: Execution Loop
         server_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         history = [
             {"role": "system", "content": (
-                f"You are a High-Command Specialist. Your mission: {goal}.\n"
-                f"Your strategy is in {plan_path}.\n"
+                f"You are an expert {dept['persona']} in the {dept['name']}.\n"
+                f"SOPs for your department:\n{dept['sop']}\n\n"
+                f"MISSION: {goal}\n"
+                f"STRATEGY: {plan_path}\n\n"
                 f"RULES:\n"
-                f"1. Update {log_path} and {report_path} after EVERY successful tool use.\n"
-                f"2. Use the `wait_until` tool if you need to schedule a message or wait for a specific time.\n"
-                f"3. Use the `send_message_to_user` tool to actually deliver messages or alerts to the boss.\n"
-                f"4. NEVER use linux 'cron' or 'at' commands. They do not work in this container.\n"
-                f"5. SERVER CONTEXT: The current server time is {server_now}. If the user specified a timezone (e.g. CST), calculate the offset carefully before using `wait_until`.\n"
-                "6. Do not stop until the mission is 100% complete."
+                f"1. Update {log_path} and {report_path} after EVERY tool use.\n"
+                f"2. Use `wait_until` to schedule future work. This FREEES your desk for others.\n"
+                f"3. Use `spawn_intern` if you need to parallelize a large mission.\n"
+                f"4. SERVER TIME: {server_now}. User timezone is handled by the HQ.\n"
+                f"5. SUBMISSION: When complete, provide a final answer. The CEO will audit it for 'Slop'."
             )},
-            {"role": "user", "content": f"Begin execution. Current goal: {goal}"}
+            {"role": "user", "content": f"Begin mission."}
         ]
         
         # We allow a much higher limit for High-Command (500 steps instead of chat's 7)
