@@ -16,7 +16,6 @@ from sunflower.scheduler import MasterScheduler
 
 # States for Model Selection
 class ModelStates(StatesGroup):
-    waiting_for_search = State()
     waiting_for_provider_models = State()
 
 class SunflowerBot:
@@ -68,7 +67,6 @@ class SunflowerBot:
         self.dp.message(Command("restart"))(self.cmd_restart)
         
         # FSM and Callbacks
-        self.dp.message(ModelStates.waiting_for_search)(self.process_model_search)
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
         
         # Fallback for all other messages
@@ -433,7 +431,7 @@ class SunflowerBot:
             await message.answer(f"System Error (review): {str(e)}")
 
     async def cmd_models(self, message: types.Message):
-        """Starts the interactive model drill-down."""
+        """Interactive model browser. Usage: /model [search]"""
         # Check if user provided an immediate search
         parts = message.text.split(maxsplit=1)
         if len(parts) > 1:
@@ -443,16 +441,23 @@ class SunflowerBot:
             return
 
         providers = await self.llm.get_providers()
+        if not providers:
+            await message.answer("Unable to fetch provider list from OpenRouter.")
+            return
+
         keyboard = []
-        # Group providers into rows of 2
+        # Group providers into rows of 2 for better UX
         for i in range(0, len(providers), 2):
             row = [InlineKeyboardButton(text=p.capitalize(), callback_data=f"provider_{p}") for p in providers[i:i+2]]
             keyboard.append(row)
         
         reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
-        await message.answer("🌐 *Select a Provider*\n(Newest models first)", reply_markup=reply_markup, parse_mode="Markdown")
+        await message.answer("🌐 *Select a Provider*\n(Newest models first) or use `/model <search>`", reply_markup=reply_markup, parse_mode="Markdown")
 
-    async def process_provider_selection(self, callback: types.CallbackQuery, state: FSMContext):
+    # Alias for both variants
+    cmd_model = cmd_models
+
+    async def process_provider_selection(self, callback: types.CallbackQuery):
         provider = callback.data.split("provider_")[1]
         models = await self.llm.get_available_models(provider=provider)
         await self._show_models_list(callback.message, models, f"Newest models from {provider.capitalize()}:")
@@ -472,20 +477,6 @@ class SunflowerBot:
         reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
         await message.answer(title, reply_markup=reply_markup)
 
-    async def cmd_model(self, message: types.Message, state: FSMContext):
-        """Legacy search-only alias"""
-        await state.set_state(ModelStates.waiting_for_search)
-        await message.answer("Type part of a model name to search (e.g. `llama`, `claude`):")
-
-    async def process_model_search(self, message: types.Message, state: FSMContext):
-        term = message.text
-        if term and term.startswith("/"):
-            await state.clear()
-            return
-        
-        models = await self.llm.get_available_models(search_term=term)
-        await self._show_models_list(message, models, f"Results for '{term}':")
-        await state.clear()
 
     async def process_model_selection(self, callback: types.CallbackQuery):
         model_id = callback.data.split("select_model_")[1]

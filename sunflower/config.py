@@ -9,14 +9,9 @@ class Config:
         self.api_key = os.getenv("OPENROUTER_API_KEY")
         self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.config_file = "config.json"
-        self.default_model = self.load_default_model()
-
-    def load_default_model(self):
-        if not os.path.exists(self.config_file):
-            return "openai/gpt-3.5-turbo" # Fallback default
-        with open(self.config_file, 'r') as f:
-            data = json.load(f)
-            return data.get("default_model", "openai/gpt-3.5-turbo")
+        
+        # Load core settings via the unified path engine
+        self.default_model = self.get_path("default_model", "openai/gpt-3.5-turbo")
 
     def _read_config(self):
         if not os.path.exists(self.config_file):
