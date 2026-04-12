@@ -38,8 +38,8 @@ class BrowserManager:
         self._active_clients[user_id] = client
         
         try:
-            # 1. Start session with keepAlive to allow recovery/takeover
-            session = await client.sessions.create(task=task, model=cloud_model, keep_alive=True)
+            # 1. Start session idle (no task yet) to allow streaming pilot to take control
+            session = await client.sessions.create(model=cloud_model, keep_alive=True)
             live_url = session.live_url
             
             # 2. Engage Background Pilot with Streaming
