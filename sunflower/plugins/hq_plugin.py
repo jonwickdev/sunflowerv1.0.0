@@ -30,19 +30,18 @@ class DelegationPlugin(BasePlugin):
         
         return f"🚀 Task #{task_id} successfully delegated to High-Command. The background worker is now taking over. The user has been notified."
 
-async def wait_until(target_time: str) -> str:
-    """Calculates delay until a target time. If delay > 5 minutes, defers the task
-    back to the scheduler instead of blocking.
-    
+async def wait_until(target_time: str, task_id: int = 0, **kwargs) -> str:
+    """Calculates delay until a target time. If delay > 5 minutes, persists
+    wake_up_at to the DB and defers — freeing the desk for other agents.
+    The scheduler's SQL gate (wake_up_at <= now) handles the actual wake-up.
+
     Args:
-        target_time (str): The time to wake up (e.g., '05:00', '14:30').
-        
-    Returns:
-        str: Confirmation message. Contains 'DEFERRED' if the task was sent back to the scheduler.
+        target_time (str): The time to wake up (HH:MM, 24h clock).
+        task_id (int): The current task ID, needed to stamp wake_up_at in the DB.
     """
     import datetime
     import asyncio
-    
+
     now = datetime.datetime.now()
     try:
         target = datetime.datetime.strptime(target_time, "%H:%M").replace(
@@ -50,18 +49,21 @@ async def wait_until(target_time: str) -> str:
         )
         if target < now:
             target += datetime.timedelta(days=1)
-            
+
         delay = (target - now).total_seconds()
-        
+
         if delay > 300:  # More than 5 minutes -> defer, don't block
-            # Save the wake_up_at time to the database so the scheduler handles it
             from sunflower.hq_manager import HqManager
             hq = HqManager()
-            # The worker will check for 'DEFERRED' in the result and free the desk
-            print(f"[HQ WORKER] Deferring task until {target_time} ({delay:.0f}s from now). Freeing desk.")
-            return f"DEFERRED: Task deferred until {target_time}. The scheduler will wake this task at the right time."
+            await hq.initialize()
+            # Stamp the wake_up_at so get_queued_task()'s SQL gate suppresses
+            # this task until the target time. Without this, the task would be
+            # immediately re-picked up, causing an infinite execution loop.
+            await hq.update_task_status(task_id=task_id, status="queued", wake_up_at=target)
+            print(f"[HQ WORKER] Task #{task_id} deferred until {target_time} ({delay:.0f}s). Desk freed.")
+            return f"DEFERRED: Task #{task_id} sleeping until {target_time}. The scheduler will wake it."
         else:
-            # Short wait (< 5 min) - just sleep in place
+            # Short wait (< 5 min) - hold the desk, sleep in place
             print(f"[HQ WORKER] Short wait: {delay:.0f}s until {target_time}. Holding desk.")
             await asyncio.sleep(delay)
             return f"Wake up! It is now {target_time}."
@@ -88,7 +90,8 @@ class TimeManagementPlugin(BasePlugin):
 
     @classmethod
     async def execute(cls, target_time: str = "", **kwargs) -> str:
-        return await wait_until(target_time)
+        # Pass task_id through so wait_until can stamp wake_up_at in the DB
+        return await wait_until(target_time, task_id=kwargs.get('task_id', 0))
 
 class MessengerPlugin(BasePlugin):
     @classmethod

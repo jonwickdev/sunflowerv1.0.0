@@ -15,31 +15,24 @@ class HighCommandWorker:
         self.bot = bot
         self.llm = LLMClient(config)
         self.is_running = True
-        # The 'Office Desks' - limits how many agents work at once
-        self.max_workers = 5
-        self.semaphore = asyncio.Semaphore(self.max_workers)
 
     async def start_loop(self):
-        """Main polling loop. Spawns tasks as desks become available."""
-        print(f"🏗️ High-Command Worker Pool active (Max desks: {self.max_workers})")
+        """Main polling loop. Queue depth and task status are the natural governors."""
+        print("🏗️ High-Command Worker Pool active. Concurrency governed by queue depth.")
         await self.hq.initialize()
 
         while self.is_running:
             try:
                 task = await self.hq.get_queued_task()
                 if task:
-                    # Fire and forget - the semaphore inside handled the 'desk' limit
-                    asyncio.create_task(self.run_task_with_semaphore(task))
+                    # Fire and forget. A task moves off 'queued' immediately, so
+                    # it cannot be double-dispatched on the next poll cycle.
+                    asyncio.create_task(self.process_task(task))
                 
-                await asyncio.sleep(2) # Frequent shallow poll
+                await asyncio.sleep(2)
             except Exception as e:
                 print(f"❌ Worker Pool Error: {e}")
                 await asyncio.sleep(5)
-
-    async def run_task_with_semaphore(self, task: dict):
-        """Attempts to seat an agent at a desk."""
-        async with self.semaphore:
-            await self.process_task(task)
 
     async def process_task(self, task: dict):
         """Execute a mission using the Plan-Action-Report protocol."""
