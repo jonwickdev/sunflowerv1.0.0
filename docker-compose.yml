@@ -7,6 +7,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - ANONYMIZED_TELEMETRY=false
     volumes:
       - ./config.json:/app/config.json
       - ./sunflower/hq:/app/sunflower/hq
