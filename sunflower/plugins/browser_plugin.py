@@ -1,12 +1,10 @@
 from sunflower.tools import BasePlugin
-from sunflower.browser_manager import BrowserManager
+from sunflower.web_agent import WebAgent
 from sunflower.config import Config
 
 class BrowserPlugin(BasePlugin):
     """
-    Plugin for autonomous web browsing and task execution.
-    The browser runs headlessly in the background and messages
-    the user directly when the mission is complete.
+    Plugin for autonomous web browsing via raw Playwright + Vision.
     """
 
     @classmethod
@@ -16,12 +14,13 @@ class BrowserPlugin(BasePlugin):
             "function": {
                 "name": "web_agent",
                 "description": (
-                    "Launches a headless browser agent to perform a task on the live web "
-                    "that requires interacting with a page (clicking, form filling, logging in, posting). "
-                    "For pure research or information lookup, use web_search instead — it is faster. "
-                    "The agent runs in the background and messages the user when done. "
-                    "IMPORTANT: Call this tool ONCE, then immediately return a short confirmation "
-                    "to the user. Do NOT call any more tools after this."
+                    "Launches a headless browser agent with vision capabilities to perform a task "
+                    "on the live web that requires interacting with a page (clicking, form filling). "
+                    "For pure research, use web_search instead — it is faster. "
+                    "For Reddit tasks, use the specialized reddit_* tools. "
+                    "IMPORTANT: This tool REQUIRES you to have vision capabilities. If you are a text-only "
+                    "model, you must return an error instructing the user to switch to a vision model (like gemini-2.5-pro). "
+                    "Call this tool ONCE, then immediately return a short confirmation to the user."
                 ),
                 "parameters": {
                     "type": "object",
@@ -32,16 +31,14 @@ class BrowserPlugin(BasePlugin):
                         },
                         "profile": {
                             "type": "string",
-                            "description": (
-                                "Which identity profile to use. "
-                                "'agent' = Sunflower's own accounts (default, use for general tasks). "
-                                "'personal' = The user's personal accounts. "
-                                "Other named profiles as set up by the user (e.g. 'work'). "
-                                "Only specify this if the user explicitly says which profile to use."
-                            )
+                            "description": "Identity profile to use ('agent', 'personal', etc)."
+                        },
+                        "platform": {
+                            "type": "string",
+                            "description": "The platform you are accessing (e.g. 'x', 'linkedin'). Forms the session filename."
                         }
                     },
-                    "required": ["task"]
+                    "required": ["task", "platform"]
                 }
             }
         }
@@ -50,15 +47,30 @@ class BrowserPlugin(BasePlugin):
     async def execute(cls, user_id: int = 0, **kwargs) -> str:
         task = kwargs.get("task", "")
         profile = kwargs.get("profile", "agent")
+        platform = kwargs.get("platform", "default")
 
         if not task:
             return "❌ No task provided to web_agent."
 
         config = Config()
-        manager = BrowserManager(config)
-        result = await manager.run_web_task(task, user_id, profile=profile)
+        
+        # We start the agent in the background so it doesn't block the LLM hop loop
+        import asyncio
+        asyncio.create_task(cls._run_and_report(task, profile, platform, user_id, config))
+        
+        return "🚀 Browser mission started in the background. Generating vision context... You will be messaged when complete."
 
-        if "error" in result:
-            return f"❌ Browser Mission Failed: {result['error']}"
-
-        return result.get("output", "🚀 Browser mission started. You'll be messaged when complete.")
+    @classmethod
+    async def _run_and_report(cls, task, profile, platform, user_id, config):
+        from sunflower.bot import SunflowerBot
+        agent = WebAgent(config)
+        result = await agent.run(task, profile=profile, platform=platform)
+        
+        bot_instance = SunflowerBot.instance
+        if bot_instance:
+            if "error" in result:
+                msg = f"❌ *Browser Mission Failed:* {result['error']}"
+            else:
+                msg = f"✅ *Mission Complete (Profile: {profile})*\n\n{result['output']}"
+            
+            await bot_instance.bot.send_message(user_id, msg, parse_mode="Markdown")

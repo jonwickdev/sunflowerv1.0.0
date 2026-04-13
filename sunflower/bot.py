@@ -71,6 +71,7 @@ class SunflowerBot:
         self.dp.message(Command("clearsession"))(self.cmd_clearsession)
         self.dp.message(Command("profiles"))(self.cmd_profiles)
         self.dp.message(Command("connect"))(self.cmd_connect)
+        self.dp.message(Command("importsession"))(self.cmd_importsession)
         
         # FSM and Callbacks
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -330,6 +331,52 @@ class SunflowerBot:
             parse_mode="Markdown"
         )
 
+    async def cmd_importsession(self, message: types.Message):
+        """Import a session cookie for platforms like X."""
+        parts = message.text.split()
+        if len(parts) < 4:
+            await message.answer(
+                "🍪 *Import Browser Session*\n\n"
+                "Use this to authenticate platforms like X without passwords.\n\n"
+                "*How to get your token:* \n"
+                "1. Drag this code to your bookmarks bar:\n"
+                "`javascript:(function(){var at=document.cookie.split('; ').find(r=>r.startsWith('auth_token='));if(at){prompt('Copy this token:', at.split('=')[1]);}else{alert('Token not found. Are you logged in?');}})();`\n"
+                "2. Go to x.com and click the bookmark.\n"
+                "3. Copy the token.\n\n"
+                "*Usage:* `/importsession <profile> <platform> <auth_token> [ct0]`\n"
+                "Example: `/importsession personal x d83j291jd931j2...`",
+                parse_mode="Markdown"
+            )
+            return
+
+        profile = parts[1].lower()
+        platform = parts[2].lower()
+        auth_token = parts[3]
+        ct0 = parts[4] if len(parts) > 4 else None
+
+        import os
+        import json
+        vault = os.path.join(os.getcwd(), "sunflower", "vault", "browser", profile)
+        os.makedirs(vault, exist_ok=True)
+        session_path = os.path.join(vault, f"{platform}_session.json")
+
+        cookies = []
+        if platform == "x":
+            cookies.append({"name": "auth_token", "value": auth_token, "domain": ".x.com", "path": "/", "expires": -1, "httpOnly": True, "secure": True, "sameSite": "None"})
+            if ct0:
+                cookies.append({"name": "ct0", "value": ct0, "domain": ".x.com", "path": "/", "expires": -1, "httpOnly": False, "secure": True, "sameSite": "Lax"})
+        else:
+            await message.answer(f"Platform {platform} is not fully supported for importsession yet, but cookies stored.", parse_mode="Markdown")
+
+        session_data = {"cookies": cookies, "origins": []}
+        with open(session_path, 'w') as f:
+            json.dump(session_data, f)
+            
+        # Register the platform explicitly so it shows up in /profiles
+        self.config.set_profile_account(profile, platform, {"imported": True})
+
+        await message.answer(f"✅ Session imported for `{profile}/{platform}`. Stored in vault.", parse_mode="Markdown")
+
     async def cmd_help(self, message: types.Message):
         """Sunflower Manifesto"""
         help_text = (
@@ -337,7 +384,10 @@ class SunflowerBot:
             "The world is noisy; Sunflower is focused.\n\n"
             "I am your high-performance autonomous ecosystem. I don't just chat; I plan, delegate, and execute.\n\n"
             "QUICK START:\n"
-            "• Just talk to me to brainstorm.\n"
+            "- Avoid jargon. Be conversational but precise.\n"
+            "- CRITICAL: Never claim a web or platform task is complete unless you received a confirmed result from the tool (a tweet URL, post ID, real follower count, etc.).\n"
+            "- If a tool fails, report the failure honestly. Do NOT apologize and suggest alternatives — report exactly what the tool returned.\n"
+            "- For long-running tasks (account growth, research campaigns): Use /delegate (via hq tool) to create an HQ background task. Do NOT attempt these inline.\n"
             "• Use /delegate to start a background mission.\n"
             "• Use /status to check my health.\n"
             "• Use /commands to see my full power.\n\n"
@@ -611,6 +661,18 @@ class SunflowerBot:
             
             # Build injected history for API call
             injected_history = self.histories[user_id].copy()
+            
+            # Base System Profile
+            base_prompt = (
+                "You are Sunflower, a high-performance autonomous agent orchestration ecosystem.\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. Never claim a web or platform task is complete unless you received a confirmed result from the tool (e.g. a tweet URL, post ID, real follower count, screenshot result).\n"
+                "2. If a tool fails, report the failure honestly. Do NOT apologize and suggest alternatives — report exactly what the tool returned.\n"
+                "3. For long-running tasks (account growth, research campaigns, content schedules): Use the hq tool to delegate and create a background task. Do NOT attempt these inline.\n"
+                "4. For web browsing tasks using web_agent, you MUST possess vision capabilities since the tool returns screenshots.\n"
+                "5. Avoid jargon. Be conversational but precise."
+            )
+            
             if user_cfg["think"] != "off":
                 think_instructions = {
                     "minimal": "Take a brief moment to reason step-by-step before answering.",
@@ -619,8 +681,11 @@ class SunflowerBot:
                     "high": "Perform a massive multi-step logical deduction in <think> tags prior to answering.",
                     "xhigh": "You are in maximum reasoning mode. Output exhaustive stream-of-consciousness logic in <think> tags. Do not skip any thought."
                 }
-                system_msg = {"role": "system", "content": think_instructions[user_cfg["think"]]}
-                injected_history.insert(0, system_msg)
+                system_msg = {"role": "system", "content": f"{base_prompt}\n\n{think_instructions[user_cfg['think']]}"}
+            else:
+                system_msg = {"role": "system", "content": base_prompt}
+                
+            injected_history.insert(0, system_msg)
 
             if user_cfg["verbose"]:
                 await message.answer("Context compiled. Sending to OpenRouter...")
@@ -670,7 +735,8 @@ class SunflowerBot:
             BotCommand(command="commands", description="List the command catalog"),
             BotCommand(command="clearsession", description="Clear saved login session for a platform"),
             BotCommand(command="profiles", description="View configured identity profiles"),
-            BotCommand(command="connect", description="Add a platform account to a profile"),
+            BotCommand(command="connect", description="Add an API account to a profile (Reddit, etc)"),
+            BotCommand(command="importsession", description="Import Chrome cookies (X, etc)"),
             BotCommand(command="stop", description="Abort the current chat generation"),
             BotCommand(command="compact", description="Summarize and archive context"),
             BotCommand(command="restart", description="Restart the bot gateway"),

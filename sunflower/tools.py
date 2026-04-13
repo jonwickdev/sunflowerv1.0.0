@@ -45,14 +45,29 @@ class PluginManager:
                     for name, obj in inspect.getmembers(module, inspect.isclass):
                         if issubclass(obj, BasePlugin) and obj != BasePlugin:
                             schema = obj.get_tool_schema()
-                            if "function" in schema and "name" in schema["function"]:
-                                cls._plugins[schema["function"]["name"]] = obj
+                            if isinstance(schema, dict):
+                                if "function" in schema and "name" in schema["function"]:
+                                    cls._plugins[schema["function"]["name"]] = obj
+                            elif isinstance(schema, list):
+                                for s in schema:
+                                    if "function" in s and "name" in s["function"]:
+                                        cls._plugins[s["function"]["name"]] = obj
                 except Exception as e:
                     print(f"Failed to load plugin {filename}: {e}")
 
     @classmethod
     async def get_all_schemas(cls) -> list:
-        schemas = [plugin.get_tool_schema() for plugin in cls._plugins.values() if plugin.get_tool_schema()]
+        schemas = []
+        seen = set()
+        for plugin in cls._plugins.values():
+            if str(plugin) in seen: continue
+            seen.add(str(plugin))
+            
+            schema = plugin.get_tool_schema()
+            if isinstance(schema, dict) and schema:
+                schemas.append(schema)
+            elif isinstance(schema, list):
+                schemas.extend(schema)
         try:
             from sunflower.mcp_manager import McpManager
             mcp_schemas = await McpManager.get_all_tools()

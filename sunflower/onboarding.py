@@ -110,8 +110,8 @@ def run_onboarding():
 
     print("\n\n✨ Setup complete! Sunflower is ready.")
     print("\n💡 TIP: You can add more platform accounts anytime with:")
-    print("   /connect agent <platform>   — add to Sunflower's own profile")
-    print("   /connect personal <platform> — add to your personal profile")
+    print("   /importsession <profile> x   — Import your X (Twitter) browser session")
+    print("   /connect <profile> reddit    — Add Reddit API tokens")
     print("\n🚀 TO START:")
     print("   docker compose up -d --build")
     print("\n📖 Full documentation: github.com/your-repo/sunflower")
