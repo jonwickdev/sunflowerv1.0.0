@@ -8,6 +8,7 @@ aiosqlite==0.20.0
 pytz==2024.1
 browser-use>=0.1.0
 langchain-openai>=0.1.0
+langchain-anthropic>=0.1.0
 playwright>=1.42.0
 pyotp>=2.9.0
 playwright-stealth>=1.0.6
