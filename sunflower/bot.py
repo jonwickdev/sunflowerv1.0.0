@@ -68,6 +68,7 @@ class SunflowerBot:
         self.dp.message(Command("stop"))(self.cmd_stop)
         self.dp.message(Command("compact"))(self.cmd_compact)
         self.dp.message(Command("restart"))(self.cmd_restart)
+        self.dp.message(Command("clearsession"))(self.cmd_clearsession)
         
         # FSM and Callbacks
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -238,9 +239,27 @@ class SunflowerBot:
     async def cmd_restart(self, message: types.Message):
         """Restarts the bot gateway."""
         await message.answer("🔄 Rebooting Sunflower Engine...\n*(I will be back online in ~10 seconds)*")
-        # Exit the process. The Docker 'restart: always' policy will handle the rest.
         import os
         os._exit(0)
+
+    async def cmd_clearsession(self, message: types.Message):
+        """Delete a saved browser session so the agent logs in fresh on next run."""
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer(
+                "Usage: `/clearsession <platform>`\nExample: `/clearsession x`\n\n"
+                "This deletes the saved cookies so the agent will log in fresh next time.",
+                parse_mode="Markdown"
+            )
+            return
+        platform = parts[1].lower()
+        from sunflower.browser_manager import BrowserManager
+        bm = BrowserManager(self.config)
+        cleared = await bm.clear_session(message.from_user.id, platform)
+        if cleared:
+            await message.answer(f"✅ Saved session for `{platform}` cleared. Next run will log in fresh.", parse_mode="Markdown")
+        else:
+            await message.answer(f"No saved session found for `{platform}`.", parse_mode="Markdown")
 
     async def cmd_help(self, message: types.Message):
         """Sunflower Manifesto"""
@@ -508,13 +527,8 @@ class SunflowerBot:
         
         # 0. Check for Mission Resume commands
         if text.lower() in ["resume", "continue", "resume mission"]:
-            from sunflower.browser_manager import BrowserManager
-            bm = BrowserManager(self.config)
-            res = await bm.resume_session(user_id)
-            if "error" not in res:
-                await message.answer(res["output"], parse_mode="Markdown")
-                return
-            # If error, just fall through to normal AI chat
+            await message.answer("No active mission to resume.")
+            return
             
         try:
             if user_id not in self.histories:
@@ -585,6 +599,7 @@ class SunflowerBot:
             BotCommand(command="schedule", description="Schedule a recurring mission"),
             BotCommand(command="help", description="Show the sunflower manifesto"),
             BotCommand(command="commands", description="List the command catalog"),
+            BotCommand(command="clearsession", description="Clear saved login session for a platform"),
             BotCommand(command="stop", description="Abort the current chat generation"),
             BotCommand(command="compact", description="Summarize and archive context"),
             BotCommand(command="restart", description="Restart the bot gateway"),
