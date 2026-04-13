@@ -69,6 +69,8 @@ class SunflowerBot:
         self.dp.message(Command("compact"))(self.cmd_compact)
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(Command("clearsession"))(self.cmd_clearsession)
+        self.dp.message(Command("profiles"))(self.cmd_profiles)
+        self.dp.message(Command("connect"))(self.cmd_connect)
         
         # FSM and Callbacks
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -245,21 +247,88 @@ class SunflowerBot:
     async def cmd_clearsession(self, message: types.Message):
         """Delete a saved browser session so the agent logs in fresh on next run."""
         parts = message.text.split()
-        if len(parts) < 2:
+        if len(parts) < 3:
             await message.answer(
-                "Usage: `/clearsession <platform>`\nExample: `/clearsession x`\n\n"
-                "This deletes the saved cookies so the agent will log in fresh next time.",
+                "Usage: `/clearsession <profile> <platform>`\n"
+                "Example: `/clearsession personal x`\n\n"
+                "Deletes saved cookies so the agent logs in fresh next time.",
                 parse_mode="Markdown"
             )
             return
-        platform = parts[1].lower()
+        profile, platform = parts[1].lower(), parts[2].lower()
         from sunflower.browser_manager import BrowserManager
         bm = BrowserManager(self.config)
-        cleared = await bm.clear_session(message.from_user.id, platform)
+        cleared = await bm.clear_session(message.from_user.id, platform, profile)
         if cleared:
-            await message.answer(f"✅ Saved session for `{platform}` cleared. Next run will log in fresh.", parse_mode="Markdown")
+            await message.answer(f"✅ Session cleared for `{profile}/{platform}`. Next run will log in fresh.", parse_mode="Markdown")
         else:
-            await message.answer(f"No saved session found for `{platform}`.", parse_mode="Markdown")
+            await message.answer(f"No saved session found for `{profile}/{platform}`.", parse_mode="Markdown")
+
+    async def cmd_profiles(self, message: types.Message):
+        """Show all configured identity profiles and their connected platforms."""
+        profiles = self.config.list_profiles()
+        if not profiles:
+            await message.answer(
+                "📂 No profiles configured yet.\n\n"
+                "Use `/connect agent <platform>` to add Sunflower's own accounts.\n"
+                "Use `/connect personal <platform>` to add your personal accounts.",
+                parse_mode="Markdown"
+            )
+            return
+
+        lines = ["💼 *Identity Profiles*\n"]
+        for name, data in profiles.items():
+            label = data.get("display_name", name)
+            accounts = data.get("accounts", {})
+            if accounts:
+                platforms = ", ".join(f"`{p}`" for p in accounts.keys())
+                lines.append(f"{label}\n└ Platforms: {platforms}")
+            else:
+                lines.append(f"{label}\n└ _No platforms connected yet_")
+            lines.append("")
+
+        lines.append("_Add accounts: `/connect <profile> <platform>`_")
+        await message.answer("\n".join(lines), parse_mode="Markdown")
+
+    async def cmd_connect(self, message: types.Message):
+        """
+        Add or update credentials for a platform within a named profile.
+        Usage: /connect <profile> <platform> <username> <password> [totp_secret]
+        """
+        parts = message.text.split()
+        if len(parts) < 5:
+            await message.answer(
+                "🔌 *Connect a Platform Account*\n\n"
+                "Usage:\n"
+                "`/connect <profile> <platform> <username> <password>`\n"
+                "`/connect <profile> <platform> <username> <password> <totp_secret>`\n\n"
+                "Examples:\n"
+                "`/connect agent x sunflower_bot mysecretpass`\n"
+                "`/connect personal reddit jon_doe mypassword`\n\n"
+                "Profiles: `agent` (Sunflower\'s identity), `personal`, or any name you choose.",
+                parse_mode="Markdown"
+            )
+            return
+
+        profile = parts[1].lower()
+        platform = parts[2].lower()
+        username = parts[3]
+        password = parts[4]
+        totp = parts[5] if len(parts) > 5 else None
+
+        creds = {"user": username, "pass": password}
+        if totp:
+            creds["totp"] = totp
+
+        self.config.set_profile_account(profile, platform, creds)
+        await message.answer(
+            f"✅ *Account connected!*\n"
+            f"Profile: `{profile}`\n"
+            f"Platform: `{platform}`\n"
+            f"Username: `{username}`\n\n"
+            f"_Credentials stored. The browser agent will use these automatically._",
+            parse_mode="Markdown"
+        )
 
     async def cmd_help(self, message: types.Message):
         """Sunflower Manifesto"""
@@ -600,6 +669,8 @@ class SunflowerBot:
             BotCommand(command="help", description="Show the sunflower manifesto"),
             BotCommand(command="commands", description="List the command catalog"),
             BotCommand(command="clearsession", description="Clear saved login session for a platform"),
+            BotCommand(command="profiles", description="View configured identity profiles"),
+            BotCommand(command="connect", description="Add a platform account to a profile"),
             BotCommand(command="stop", description="Abort the current chat generation"),
             BotCommand(command="compact", description="Summarize and archive context"),
             BotCommand(command="restart", description="Restart the bot gateway"),

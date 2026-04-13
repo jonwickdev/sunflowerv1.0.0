@@ -12,3 +12,5 @@ langchain-anthropic>=0.1.0
 playwright>=1.42.0
 pyotp>=2.9.0
 playwright-stealth>=1.0.6
+duckduckgo-search>=6.2.0
+exa-py>=1.0.0

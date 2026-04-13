@@ -18,6 +18,11 @@ class Config:
         if not self.browser_api_key:
             self.browser_api_key = self.get_path("browser_api_key")
 
+        # One-time migration: move browser.accounts -> profiles.personal
+        self._migrate_legacy_accounts()
+        # Ensure agent profile structure always exists
+        self._ensure_agent_profile()
+
     async def get_balance(self) -> float:
         """Fetch current OpenRouter credit balance."""
         import httpx
@@ -138,3 +143,66 @@ class Config:
         if not self.bot_token: missing.append("TELEGRAM_BOT_TOKEN")
         if missing:
             raise ValueError(f"Missing configuration: {', '.join(missing)}. Please run onboarding or check .env file.")
+
+    # -------------------------------------------------------------------------
+    # Profile System
+    # -------------------------------------------------------------------------
+
+    def get_profile(self, name: str) -> dict:
+        """Returns the full profile dict for a named profile."""
+        return self.get_path(f"profiles.{name}", {})
+
+    def list_profiles(self) -> dict:
+        """Returns all configured profiles."""
+        return self.get_path("profiles", {})
+
+    def set_profile_account(self, profile: str, platform: str, creds: dict):
+        """Add or update a platform account within a named profile."""
+        # Ensure the profile has a display name if it's new
+        if not self.get_path(f"profiles.{profile}.display_name"):
+            labels = {"agent": "🤖 Agent Profile", "personal": "👤 My Personal Profile", "work": "💼 Work Profile"}
+            self.set_path(f"profiles.{profile}.display_name", labels.get(profile, f"📁 {profile.capitalize()} Profile"))
+        self.set_path(f"profiles.{profile}.accounts.{platform}", creds)
+
+    def get_profile_account(self, profile: str, platform: str) -> dict:
+        """Get credentials for a specific platform in a named profile."""
+        return self.get_path(f"profiles.{profile}.accounts.{platform}", {})
+
+    def _ensure_agent_profile(self):
+        """Ensure the agent profile structure exists (even if empty of credentials)."""
+        if not self.get_path("profiles.agent"):
+            self.set_path("profiles.agent", {
+                "display_name": "🤖 Agent Profile",
+                "accounts": {}
+            })
+
+    def _migrate_legacy_accounts(self):
+        """
+        One-time silent migration: moves old browser.accounts into profiles.personal.
+        Runs on every startup but only does work if the legacy key exists.
+        """
+        data = self._read_config()
+        legacy = data.get("browser", {}).get("accounts", {})
+        if not legacy:
+            return
+
+        print("📦 Migrating legacy browser.accounts → profiles.personal...")
+        if "profiles" not in data:
+            data["profiles"] = {}
+        if "personal" not in data["profiles"]:
+            data["profiles"]["personal"] = {
+                "display_name": "👤 My Personal Profile",
+                "accounts": {}
+            }
+
+        for platform, creds in legacy.items():
+            if platform not in data["profiles"]["personal"]["accounts"]:
+                data["profiles"]["personal"]["accounts"][platform] = creds
+
+        # Remove the legacy key
+        del data["browser"]["accounts"]
+        if not data["browser"]:
+            del data["browser"]
+
+        self._write_config(data)
+        print("✅ Migration complete.")

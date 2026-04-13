@@ -16,12 +16,12 @@ class BrowserPlugin(BasePlugin):
             "function": {
                 "name": "web_agent",
                 "description": (
-                    "Launches a headless browser agent to perform a task on the live web. "
-                    "The agent runs in the background and will message the user directly when done. "
+                    "Launches a headless browser agent to perform a task on the live web "
+                    "that requires interacting with a page (clicking, form filling, logging in, posting). "
+                    "For pure research or information lookup, use web_search instead — it is faster. "
+                    "The agent runs in the background and messages the user when done. "
                     "IMPORTANT: Call this tool ONCE, then immediately return a short confirmation "
-                    "message to the user (e.g. 'I've started the browser mission — you'll get a "
-                    "message when it's complete.'). Do NOT call any more tools after this. "
-                    "There is no live browser view available over Telegram."
+                    "to the user. Do NOT call any more tools after this."
                 ),
                 "parameters": {
                     "type": "object",
@@ -29,6 +29,16 @@ class BrowserPlugin(BasePlugin):
                         "task": {
                             "type": "string",
                             "description": "The natural language description of the web task to perform."
+                        },
+                        "profile": {
+                            "type": "string",
+                            "description": (
+                                "Which identity profile to use. "
+                                "'agent' = Sunflower's own accounts (default, use for general tasks). "
+                                "'personal' = The user's personal accounts. "
+                                "Other named profiles as set up by the user (e.g. 'work'). "
+                                "Only specify this if the user explicitly says which profile to use."
+                            )
                         }
                     },
                     "required": ["task"]
@@ -39,12 +49,14 @@ class BrowserPlugin(BasePlugin):
     @classmethod
     async def execute(cls, user_id: int = 0, **kwargs) -> str:
         task = kwargs.get("task", "")
+        profile = kwargs.get("profile", "agent")
+
         if not task:
             return "❌ No task provided to web_agent."
 
         config = Config()
         manager = BrowserManager(config)
-        result = await manager.run_web_task(task, user_id)
+        result = await manager.run_web_task(task, user_id, profile=profile)
 
         if "error" in result:
             return f"❌ Browser Mission Failed: {result['error']}"
