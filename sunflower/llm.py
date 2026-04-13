@@ -35,28 +35,38 @@ class LLMClient:
 
     async def _run_chat_loop(self, history: list, user_id: int) -> str:
         from sunflower.tools import PluginManager
+        import json
         MAX_HOPS = 10
         
         for hop in range(MAX_HOPS):
             tools = await PluginManager.get_all_schemas()
             
-            # Using the async client for a non-blocking request
+            # Non-blocking request via async client
             response = await self.client.chat.completions.create(
                 model=self.config.default_model,
                 messages=history,
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None
             )
-            
+
+            # Guard: some models return null choices (e.g. after tool calls).
+            # Log the model name so we can identify the culprit quickly.
+            if not response or not response.choices:
+                model = self.config.default_model
+                print(f"[LLM Warning] Empty response from {model} on hop {hop}. Returning graceful error.")
+                return (
+                    f"⚠️ The AI brain (`{model}`) returned an empty response. "
+                    "This usually means the model doesn't fully support tool-calling. "
+                    "Try switching to a more capable model with `/models` "
+                    "(e.g. `google/gemini-2.5-pro` or `anthropic/claude-3-5-sonnet`)."
+                )
+
             msg = response.choices[0].message
             if msg.tool_calls:
                 history.append(msg)
-                import json
                 for tool_call in msg.tool_calls:
                     name = tool_call.function.name
                     try:
-                        import json
-                        # Clean the arguments string in case of Markdown or extra whitespace
                         arg_str = tool_call.function.arguments.strip()
                         if arg_str.startswith("```json"): arg_str = arg_str[7:].rstrip("`").strip()
                         elif arg_str.startswith("```"): arg_str = arg_str[3:].rstrip("`").strip()
@@ -65,8 +75,8 @@ class LLMClient:
                         print(f"[PLUGIN] Executing: {name}")
                         result = await PluginManager.execute_tool(name, args, user_id=user_id)
                     except json.JSONDecodeError as je:
-                        print(f"[LLM Error] Malformed tool arguments: {tool_call.function.arguments[:200]}...")
-                        result = f"Error: The AI sent malformed tool instructions. (Details: {str(je)})"
+                        print(f"[LLM Error] Malformed tool arguments: {tool_call.function.arguments[:200]}")
+                        result = f"Error: The AI sent malformed tool arguments. ({str(je)})"
                     except Exception as e:
                         result = f"Error: {str(e)}"
                         
@@ -76,11 +86,11 @@ class LLMClient:
                         "name": tool_call.function.name,
                         "content": str(result)
                     })
-                continue 
+                continue
             else:
-                return msg.content
+                return msg.content or ""
                 
-        return "❌ Hop limit reached."
+        return "❌ Hop limit reached. The task may be too complex for the current model. Try /delegate for long-running jobs."
 
     async def get_providers(self) -> list:
         """Extract unique provider names from the OpenRouter model list."""
