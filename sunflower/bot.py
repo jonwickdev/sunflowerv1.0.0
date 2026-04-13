@@ -71,7 +71,6 @@ class SunflowerBot:
         self.dp.message(Command("clearsession"))(self.cmd_clearsession)
         self.dp.message(Command("profiles"))(self.cmd_profiles)
         self.dp.message(Command("connect"))(self.cmd_connect)
-        self.dp.message(Command("importsession"))(self.cmd_importsession)
         
         # FSM and Callbacks
         self.dp.callback_query(F.data.startswith("select_model_"))(self.process_model_selection)
@@ -331,51 +330,7 @@ class SunflowerBot:
             parse_mode="Markdown"
         )
 
-    async def cmd_importsession(self, message: types.Message):
-        """Import a session cookie for platforms like X."""
-        parts = message.text.split()
-        if len(parts) < 4:
-            await message.answer(
-                "🍪 *Import Browser Session*\n\n"
-                "Use this to authenticate platforms like X without passwords.\n\n"
-                "*How to get your token:* \n"
-                "1. Drag this code to your bookmarks bar:\n"
-                "`javascript:(function(){var at=document.cookie.split('; ').find(r=>r.startsWith('auth_token='));if(at){prompt('Copy this token:', at.split('=')[1]);}else{alert('Token not found. Are you logged in?');}})();`\n"
-                "2. Go to x.com and click the bookmark.\n"
-                "3. Copy the token.\n\n"
-                "*Usage:* `/importsession <profile> <platform> <auth_token> [ct0]`\n"
-                "Example: `/importsession personal x d83j291jd931j2...`",
-                parse_mode="Markdown"
-            )
-            return
 
-        profile = parts[1].lower()
-        platform = parts[2].lower()
-        auth_token = parts[3]
-        ct0 = parts[4] if len(parts) > 4 else None
-
-        import os
-        import json
-        vault = os.path.join(os.getcwd(), "sunflower", "vault", "browser", profile)
-        os.makedirs(vault, exist_ok=True)
-        session_path = os.path.join(vault, f"{platform}_session.json")
-
-        cookies = []
-        if platform == "x":
-            cookies.append({"name": "auth_token", "value": auth_token, "domain": ".x.com", "path": "/", "expires": -1, "httpOnly": True, "secure": True, "sameSite": "None"})
-            if ct0:
-                cookies.append({"name": "ct0", "value": ct0, "domain": ".x.com", "path": "/", "expires": -1, "httpOnly": False, "secure": True, "sameSite": "Lax"})
-        else:
-            await message.answer(f"Platform {platform} is not fully supported for importsession yet, but cookies stored.", parse_mode="Markdown")
-
-        session_data = {"cookies": cookies, "origins": []}
-        with open(session_path, 'w') as f:
-            json.dump(session_data, f)
-            
-        # Register the platform explicitly so it shows up in /profiles
-        self.config.set_profile_account(profile, platform, {"imported": True})
-
-        await message.answer(f"✅ Session imported for `{profile}/{platform}`. Stored in vault.", parse_mode="Markdown")
 
     async def cmd_help(self, message: types.Message):
         """Sunflower Manifesto"""
@@ -736,7 +691,6 @@ class SunflowerBot:
             BotCommand(command="clearsession", description="Clear saved login session for a platform"),
             BotCommand(command="profiles", description="View configured identity profiles"),
             BotCommand(command="connect", description="Add an API account to a profile (Reddit, etc)"),
-            BotCommand(command="importsession", description="Import Chrome cookies (X, etc)"),
             BotCommand(command="stop", description="Abort the current chat generation"),
             BotCommand(command="compact", description="Summarize and archive context"),
             BotCommand(command="restart", description="Restart the bot gateway"),
