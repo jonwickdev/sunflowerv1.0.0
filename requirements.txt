@@ -12,3 +12,4 @@ playwright-stealth>=1.0.6
 praw>=7.7.0
 duckduckgo-search>=6.2.0
 exa-py>=1.0.0
+chromadb>=0.4.24

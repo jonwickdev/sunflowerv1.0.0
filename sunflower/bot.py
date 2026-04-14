@@ -66,7 +66,6 @@ class SunflowerBot:
         self.dp.message(Command("commands"))(self.cmd_commands)
         self.dp.message(Command("whoami"))(self.cmd_whoami)
         self.dp.message(Command("stop"))(self.cmd_stop)
-        self.dp.message(Command("compact"))(self.cmd_compact)
         self.dp.message(Command("restart"))(self.cmd_restart)
         self.dp.message(Command("clearsession"))(self.cmd_clearsession)
         self.dp.message(Command("profiles"))(self.cmd_profiles)
@@ -427,34 +426,7 @@ class SunflowerBot:
         else:
             await message.answer("No active chat turn to stop.")
 
-    async def cmd_compact(self, message: types.Message):
-        """Summarize and archive chat context."""
-        user_id = message.from_user.id
-        history = self.histories.get(user_id, [])
-        if not history:
-            await message.answer("History is already empty. Nothing to compact.")
-            return
 
-        await message.answer("📦 Compacting session... generating summary anchor.")
-        
-        # 1. Generate Summary
-        prompt = "Summarize the key decisions and topics from this conversation into several bullet points for a context.md file. Be concise."
-        compaction_history = history + [{"role": "user", "content": prompt}]
-        summary = await self.llm.chat(compaction_history, user_id=user_id)
-        
-        # 2. Write to context.md
-        import os
-        from datetime import datetime
-        context_path = "sunflower/hq/context.md"
-        os.makedirs(os.path.dirname(context_path), exist_ok=True)
-        
-        with open(context_path, "a", encoding="utf-8") as f:
-            f.write(f"\n\n### {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(summary)
-            
-        # 3. Clear History
-        self.histories[user_id] = []
-        await message.answer(f"✅ Context anchored to {context_path}. Session history cleared to prevent bleed.")
 
     async def cmd_tasks(self, message: types.Message):
         """Lists active background tasks."""
@@ -625,19 +597,30 @@ class SunflowerBot:
             # Append user message
             self.histories[user_id].append({"role": "user", "content": message.text})
             
+            # RAG / LTM Query
+            from sunflower.memory_manager import MemoryManager
+            memory_manager = MemoryManager()
+            memory_context = await memory_manager.search_memory(user_id, message.text, top_k=2)
+            
+            # Indicate typing state
+            await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+            
             # Build injected history for API call
             injected_history = self.histories[user_id].copy()
             
             # Base System Profile
             base_prompt = (
-                "You are Sunflower, a high-performance autonomous agent orchestration ecosystem.\n"
+                "You are Sunflower, the Autonomous CEO.\n"
                 "CRITICAL INSTRUCTIONS:\n"
-                "1. Never claim a web or platform task is complete unless you received a confirmed result from the tool (e.g. a tweet URL, post ID, real follower count, screenshot result).\n"
-                "2. If a tool fails, report the failure honestly. Do NOT apologize and suggest alternatives — report exactly what the tool returned.\n"
-                "3. For long-running tasks (account growth, research campaigns, content schedules): Use the hq tool to delegate and create a background task. Do NOT attempt these inline.\n"
-                "4. For web browsing tasks using web_agent, you MUST possess vision capabilities since the tool returns screenshots.\n"
-                "5. Avoid jargon. Be conversational but precise."
+                "1. CEO PERSONA: You are the ultimate authority. Be decisive, strategic, and professional.\n"
+                "2. RAG & MEMORY: You have access to long-term memory. Always query your memory for user preferences, past constraints, and project history before acting.\n"
+                "3. DO NOT DO MANUAL WORK: If a user gives a complex goal, FORM A BLUEPRINT and DELEGATE it to High-Command.\n"
+                "4. REMEMBER: Use the `remember_fact` tool to permanently save important constraints, facts, and preferences.\n"
+                "5. Web Browsing requires you to use a model with Vision. If evaluating screen state, ensure you have vision turned on."
             )
+            
+            if memory_context:
+                base_prompt += f"\n\nRELEVANT MEMORY CONTEXT:\n{memory_context}"
             
             if user_cfg["think"] != "off":
                 think_instructions = {
@@ -703,7 +686,6 @@ class SunflowerBot:
             BotCommand(command="profiles", description="View configured identity profiles"),
             BotCommand(command="connect", description="Add an API account to a profile (Reddit, etc)"),
             BotCommand(command="stop", description="Abort the current chat generation"),
-            BotCommand(command="compact", description="Summarize and archive context"),
             BotCommand(command="restart", description="Restart the bot gateway"),
         ]
         await self.bot.set_my_commands(commands)
