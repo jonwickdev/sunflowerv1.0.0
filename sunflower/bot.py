@@ -123,36 +123,50 @@ class SunflowerBot:
         await message.answer(status_text, parse_mode="Markdown")
 
     async def cmd_tools(self, message: types.Message):
-        schemas = await PluginManager.get_all_schemas()
-        if not schemas:
-            await message.answer("No active plugins/tools loaded.")
-            return
+        try:
+            schemas = await PluginManager.get_all_schemas()
+            if not schemas:
+                await message.answer("No active plugins/tools loaded.")
+                return
+                
+            text = "🛠️ *Autonomous Tools*\n\n"
+            for s in schemas:
+                name = s.get("function", {}).get("name", "Unknown")
+                desc = s.get("function", {}).get("description", "No description").replace("_", " ").replace("*", "").replace("`", "")
+                text += f"• `{name}`: {desc}\n\n"
+            text += "The AI evaluates your questions and calls these tools silently in the background."
             
-        text = "🛠️ *Autonomous Tools*\n\n"
-        for s in schemas:
-            name = s.get("function", {}).get("name", "Unknown")
-            desc = s.get("function", {}).get("description", "No description")
-            text += f"• `{name}`: {desc}\n\n"
-        text += "The AI evaluates your questions and calls these tools silently in the background."
-        await message.answer(text, parse_mode="Markdown")
+            # Substring to avoid tg 4096 limit
+            if len(text) > 4000:
+                text = text[:4000] + "\n...[Truncated]"
+                
+            await message.answer(text, parse_mode="Markdown")
+        except Exception as e:
+            await message.answer(f"Error fetching tools: {e}")
 
     async def cmd_plugins(self, message: types.Message):
-        parts = message.text.split()
-        if len(parts) > 1 and parts[1].lower() == "reload":
-            PluginManager.load_plugins()
-            await message.answer("🔄 Plugins directory re-scanned and hot-reloaded.")
-            
-        schemas = await PluginManager.get_all_schemas()
-        if not schemas:
-            await message.answer("📁 No active plugins loaded.\nUse `/plugins reload` to rescan.", parse_mode="Markdown")
-            return
-            
-        text = "🔌 *Active Plugins*\n\n"
-        for s in schemas:
-            name = s.get("function", {}).get("name", "Unknown")
-            text += f"• `{name}`\n"
-            
-        await message.answer(text, parse_mode="Markdown")
+        try:
+            parts = message.text.split()
+            if len(parts) > 1 and parts[1].lower() == "reload":
+                PluginManager.load_plugins()
+                await message.answer("🔄 Plugins directory re-scanned and hot-reloaded.")
+                
+            schemas = await PluginManager.get_all_schemas()
+            if not schemas:
+                await message.answer("📁 No active plugins loaded.\nUse `/plugins reload` to rescan.", parse_mode="Markdown")
+                return
+                
+            text = "🔌 *Active Plugins*\n\n"
+            for s in schemas:
+                name = s.get("function", {}).get("name", "Unknown")
+                text += f"• `{name}`\n"
+                
+            if len(text) > 4000:
+                text = text[:4000] + "\n...[Truncated]"
+                
+            await message.answer(text, parse_mode="Markdown")
+        except Exception as e:
+            await message.answer(f"Error fetching plugins: {e}")
 
     async def cmd_skill(self, message: types.Message):
         parts = message.text.split(maxsplit=2)
