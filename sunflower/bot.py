@@ -294,31 +294,42 @@ class SunflowerBot:
         """
         Add or update credentials for a platform within a named profile.
         Usage: /connect <profile> <platform> <username> <password> [totp_secret]
+        For Reddit: /connect <profile> reddit <client_id> <client_secret> <username> <password>
         """
         parts = message.text.split()
         if len(parts) < 5:
             await message.answer(
                 "🔌 *Connect a Platform Account*\n\n"
-                "Usage:\n"
-                "`/connect <profile> <platform> <username> <password>`\n"
-                "`/connect <profile> <platform> <username> <password> <totp_secret>`\n\n"
-                "Examples:\n"
-                "`/connect agent x sunflower_bot mysecretpass`\n"
-                "`/connect personal reddit jon_doe mypassword`\n\n"
-                "Profiles: `agent` (Sunflower\'s identity), `personal`, or any name you choose.",
+                "Usage (Standard):\n"
+                "`/connect <profile> <platform> <username> <password>`\n\n"
+                "Usage (Reddit API):\n"
+                "`/connect <profile> reddit <client_id> <client_secret> <username> <password>`\n\n"
+                "Profiles: `agent` (Sunflower's identity), `personal`, or any name you choose.",
                 parse_mode="Markdown"
             )
             return
 
         profile = parts[1].lower()
         platform = parts[2].lower()
-        username = parts[3]
-        password = parts[4]
-        totp = parts[5] if len(parts) > 5 else None
+        
+        if platform == "reddit":
+            if len(parts) < 7:
+                await message.answer("❌ For Reddit, you must provide: `<client_id> <client_secret> <username> <password>`", parse_mode="Markdown")
+                return
+            creds = {
+                "client_id": parts[3],
+                "client_secret": parts[4],
+                "username": parts[5],
+                "password": parts[6]
+            }
+        else:
+            username = parts[3]
+            password = parts[4]
+            totp = parts[5] if len(parts) > 5 else None
 
-        creds = {"user": username, "pass": password}
-        if totp:
-            creds["totp"] = totp
+            creds = {"user": username, "pass": password}
+            if totp:
+                creds["totp"] = totp
 
         self.config.set_profile_account(profile, platform, creds)
         await message.answer(

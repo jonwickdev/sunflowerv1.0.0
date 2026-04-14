@@ -48,7 +48,7 @@ class RedditPlugin(BasePlugin):
 
     @classmethod
     def _get_reddit(cls, config: Config, profile: str) -> praw.Reddit | None:
-        raw_tokens = config.get_path(f"profiles.{profile}.tokens.reddit", {})
+        raw_tokens = config.get_path(f"profiles.{profile}.accounts.reddit", {})
         client_id = raw_tokens.get("client_id")
         client_secret = raw_tokens.get("client_secret")
         username = raw_tokens.get("username")
