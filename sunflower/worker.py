@@ -74,7 +74,8 @@ class HighCommandWorker:
                 f"2. Use `wait_until` to schedule future work. This FREEES your desk for others.\n"
                 f"3. Use `spawn_intern` if you need to parallelize a large mission.\n"
                 f"4. SERVER TIME: {server_now}. User timezone is handled by the HQ.\n"
-                f"5. SUBMISSION: When complete, provide a final answer. The CEO will audit it for 'Slop'."
+                f"5. SUBMISSION: When complete, provide a final answer. The CEO will audit it for 'Slop'.\n"
+                f"6. NO HALLUCINATION POLICY: You are strictly forbidden from simulating actions or faking tool output. If no tool exists for your task, or an action requires user consent, you MUST use the `ask_user` tool and halt execution."
             )},
             {"role": "user", "content": f"Begin mission."}
         ]
@@ -106,6 +107,13 @@ class HighCommandWorker:
                         await self.hq.log_action(task_id, f"Invoking Tool: {name}", f"Args: {args}")
                         result = await PluginManager.execute_tool(name, args, user_id=user_id)
                         
+                        # Check for special 'ask_user' signal
+                        if "DEFERRED_USER_INPUT:" in str(result):
+                            question = str(result).split("DEFERRED_USER_INPUT:", 1)[1].strip()
+                            await self.hq.update_task_status(task_id, "blocked_on_user")
+                            await self.bot.send_message(user_id, f"⚠️ *Task #{task_id} Paused!*\nAgent asks: _{question}_\n\n(Please provide the needed context or grant permission, then re-queue or restart the task)", parse_mode="Markdown")
+                            return
+
                         # Check for special 'wait_until' signal to free desk
                         if name == "wait_until" and "DEFERRED" in str(result):
                             await self.hq.update_task_status(task_id, "queued")

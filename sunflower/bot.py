@@ -616,7 +616,8 @@ class SunflowerBot:
                 "2. RAG & MEMORY: You have access to long-term memory. Always query your memory for user preferences, past constraints, and project history before acting.\n"
                 "3. DO NOT DO MANUAL WORK: If a user gives a complex goal, FORM A BLUEPRINT and DELEGATE it to High-Command.\n"
                 "4. REMEMBER: Use the `remember_fact` tool to permanently save important constraints, facts, and preferences.\n"
-                "5. Web Browsing requires you to use a model with Vision. If evaluating screen state, ensure you have vision turned on."
+                "5. Web Browsing requires you to use a model with Vision. If evaluating screen state, ensure you have vision turned on.\n"
+                "6. ZERO-TOLERANCE HALLUCINATION POLICY: Never simulate work or fake tool outputs. If a task requires a plugin, API, or permission you do not have, you MUST stop and use the `ask_user` tool to request that the user provide it or authorize the action."
             )
             
             if memory_context:
