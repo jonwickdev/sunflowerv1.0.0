@@ -67,7 +67,6 @@ class SunflowerBot:
         self.dp.message(Command("whoami"))(self.cmd_whoami)
         self.dp.message(Command("stop"))(self.cmd_stop)
         self.dp.message(Command("restart"))(self.cmd_restart)
-        self.dp.message(Command("clearsession"))(self.cmd_clearsession)
         self.dp.message(Command("profiles"))(self.cmd_profiles)
         self.dp.message(Command("connect"))(self.cmd_connect)
         
@@ -256,27 +255,6 @@ class SunflowerBot:
         await message.answer("🔄 Rebooting Sunflower Engine...\n*(I will be back online in ~10 seconds)*")
         import os
         os._exit(0)
-
-    async def cmd_clearsession(self, message: types.Message):
-        """Delete a saved browser session so the agent logs in fresh on next run."""
-        parts = message.text.split()
-        if len(parts) < 3:
-            await message.answer(
-                "Usage: `/clearsession <profile> <platform>`\n"
-                "Example: `/clearsession personal x`\n\n"
-                "Deletes saved cookies so the agent logs in fresh next time.",
-                parse_mode="Markdown"
-            )
-            return
-        profile, platform = parts[1].lower(), parts[2].lower()
-        from sunflower.browser_manager import BrowserManager
-        bm = BrowserManager(self.config)
-        cleared = await bm.clear_session(message.from_user.id, platform, profile)
-        if cleared:
-            await message.answer(f"✅ Session cleared for `{profile}/{platform}`. Next run will log in fresh.", parse_mode="Markdown")
-        else:
-            await message.answer(f"No saved session found for `{profile}/{platform}`.", parse_mode="Markdown")
-
     async def cmd_profiles(self, message: types.Message):
         """Show all configured identity profiles and their connected platforms."""
         profiles = self.config.list_profiles()
@@ -697,7 +675,6 @@ class SunflowerBot:
             BotCommand(command="schedule", description="Schedule a recurring mission"),
             BotCommand(command="help", description="Show the sunflower manifesto"),
             BotCommand(command="commands", description="List the command catalog"),
-            BotCommand(command="clearsession", description="Clear saved login session for a platform"),
             BotCommand(command="profiles", description="View configured identity profiles"),
             BotCommand(command="connect", description="Add an API account to a profile (Reddit, etc)"),
             BotCommand(command="stop", description="Abort the current chat generation"),
