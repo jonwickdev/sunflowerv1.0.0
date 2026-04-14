@@ -185,3 +185,17 @@ class HqManager:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("UPDATE tasks SET redo_count = redo_count + 1 WHERE id = ?", (task_id,))
             await db.commit()
+
+    async def get_user_setting(self, user_id: int, setting_key: str, default_val: str = "UTC") -> str:
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute("SELECT value FROM user_settings WHERE user_id = ? AND key = ?", (user_id, setting_key)) as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else default_val
+
+    async def set_user_setting(self, user_id: int, setting_key: str, setting_value: str):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "INSERT INTO user_settings (user_id, key, value) VALUES (?, ?, ?) ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value",
+                (user_id, setting_key, setting_value)
+            )
+            await db.commit()
