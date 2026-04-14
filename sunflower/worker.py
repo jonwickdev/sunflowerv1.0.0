@@ -53,16 +53,28 @@ class HighCommandWorker:
         from sunflower.departments import DEPARTMENTS
         dept = DEPARTMENTS.get(task.get('department_id', 'general'), DEPARTMENTS['general'])
         
-        await self.hq.log_action(task_id, f"Planning Phase Start | Dept: {dept['name']}")
-        plan_content = await self.generate_plan(goal, dept)
-        with open(plan_path, "w", encoding="utf-8") as f:
-            f.write(plan_content)
-        
+        if not os.path.exists(plan_path):
+            await self.hq.log_action(task_id, f"Planning Phase Start | Dept: {dept['name']}")
+            plan_content = await self.generate_plan(goal, dept)
+            with open(plan_path, "w", encoding="utf-8") as f:
+                f.write(plan_content)
+            await self.bot.send_message(user_id, f"📋 *Task #{task_id} Plan Generated* ({dept['name']})\nDetails: `{plan_path}`\n\nStarting execution...", parse_mode="Markdown")
+        else:
+            await self.hq.log_action(task_id, f"Resuming Execution | Dept: {dept['name']}")
+            with open(plan_path, "r", encoding="utf-8") as f:
+                plan_content = f.read()
+
         await self.hq.update_task_status(task_id, "executing")
-        await self.bot.send_message(user_id, f"📋 *Task #{task_id} Plan Generated* ({dept['name']})\nDetails: `{plan_path}`\n\nStarting execution...", parse_mode="Markdown")
 
         # 3. Phase: Execution Loop
         server_now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                past_logs = f.read()
+        except FileNotFoundError:
+            past_logs = "No previous steps taken."
+            
         history = [
             {"role": "system", "content": (
                 f"You are an expert {dept['persona']} in the {dept['name']}.\n"
@@ -73,9 +85,11 @@ class HighCommandWorker:
                 f"1. Update {log_path} and {report_path} after EVERY tool use.\n"
                 f"2. Use `wait_until` to schedule future work. This FREEES your desk for others.\n"
                 f"3. Use `spawn_intern` if you need to parallelize a large mission.\n"
-                f"4. SERVER TIME: {server_now}. User timezone is handled by the HQ.\n"
+                f"4. SERVER TIME: {server_now}. (All times are calculated relative to Server Time unless otherwise specified).\n"
                 f"5. SUBMISSION: When complete, provide a final answer. The CEO will audit it for 'Slop'.\n"
-                f"6. NO HALLUCINATION POLICY: You are strictly forbidden from simulating actions or faking tool output. If no tool exists for your task, or an action requires user consent, you MUST use the `ask_user` tool and halt execution."
+                f"6. NO HALLUCINATION POLICY: You are strictly forbidden from simulating actions or faking tool output.\n\n"
+                f"PAST EXECUTION LOG (Crucial string to avoid amnesia):\n{past_logs}\n"
+                f"If the past execution log shows you recently woke up from a `wait_until` sleep, DO NOT sleep again! Immediately proceed with the actual task."
             )},
             {"role": "user", "content": f"Begin mission."}
         ]

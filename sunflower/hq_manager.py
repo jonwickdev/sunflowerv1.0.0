@@ -100,7 +100,7 @@ class HqManager:
             db.row_factory = aiosqlite.Row
             # A task is ready if status is 'queued' AND (wake_up_at is NULL OR wake_up_at <= now)
             async with db.execute(
-                "SELECT * FROM tasks WHERE status = 'queued' AND (wake_up_at IS NULL OR wake_up_at <= CURRENT_TIMESTAMP) ORDER BY created_at ASC LIMIT 1"
+                "SELECT * FROM tasks WHERE status = 'queued' AND (wake_up_at IS NULL OR wake_up_at <= datetime('now', 'localtime')) ORDER BY created_at ASC LIMIT 1"
             ) as cursor:
                 row = await cursor.fetchone()
                 return dict(row) if row else None
@@ -133,7 +133,7 @@ class HqManager:
     async def get_due_schedules(self) -> List[Dict]:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM schedules WHERE is_active = 1 AND next_run_at <= CURRENT_TIMESTAMP") as cursor:
+            async with db.execute("SELECT * FROM schedules WHERE is_active = 1 AND next_run_at <= datetime('now', 'localtime')") as cursor:
                 rows = await cursor.fetchall()
                 return [dict(r) for r in rows]
 
